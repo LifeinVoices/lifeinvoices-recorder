@@ -1,104 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Life in Voices Recorder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond&display=swap" rel="stylesheet" />
-    <script src="https://cdn.webrtc-experiment.com/RecordRTC.js"></script>
-    <style>
-      body {
-        font-family: 'Cormorant Garamond', serif;
-        background: #fff;
-        color: #000;
-        text-align: center;
-        padding: 40px 20px;
-      }
-      button {
-        font-size: 18px;
-        padding: 12px 24px;
-        border-radius: 10px;
-        border: none;
-        cursor: pointer;
-        background: #000;
-        color: #fff;
-        margin: 10px;
-      }
-      button:disabled {
-        background: #aaa;
-        cursor: not-allowed;
-      }
-      #audio {
-        margin-top: 20px;
-        display: none;
-      }
-      img {
-        margin-top: 30px;
-        max-width: 140px;
-      }
-      .status {
-        margin-top: 20px;
-        font-size: 16px;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Record Your Story</h1>
-    <p>Press "Start Recording" to begin. Your file will be saved automatically.</p>
-    <button id="start">Start Recording</button>
-    <button id="stop" disabled>Stop Recording</button>
-    <br />
+<head>
+  <meta charset="UTF-8">
+  <title>Record Your Story</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond&display=swap');
+    
+    body {
+      font-family: 'Cormorant Garamond', serif;
+      text-align: center;
+      padding: 40px;
+      color: #000;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      border-radius: 12px;
+      border: none;
+      background-color: #bbb;
+      color: white;
+      cursor: pointer;
+      font-family: 'Cormorant Garamond', serif;
+    }
+
+    button:hover {
+      background-color: #999;
+    }
+
+    audio {
+      margin: 20px 0;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    img.logo {
+      width: 120px;
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Record Your Story</h2>
+  <p>Press "Start Recording" to begin. Your file will be saved automatically.</p>
+
+  <button id="startBtn">Start Recording</button>
+  <button id="stopBtn">Stop Recording</button>
+  <button id="deleteBtn">Delete Recording</button>
+
+  <div id="playerContainer" style="display:none;">
     <audio id="audio" controls></audio>
-    <p class="status" id="status"></p>
-    <img src="https://drive.google.com/uc?export=view&id=1qA2qqJgbIRDjv9oD_hdYopGEgRf_UBZi" alt="Life In Voices Logo" />
+  </div>
 
-    <script>
-      const params = new URLSearchParams(window.location.search);
-      const storyteller = params.get("st") || "unknown";
-      const week = params.get("week") || "00";
-      const filename = `LIV_${storyteller}_Week${week}.wav`;
-      const webhookURL = "https://hook.integromat.com/REPLACE_WITH_YOUR_WEBHOOK";
+  <div class="status" id="statusMsg"></div>
 
-      let recorder, stream;
+  <img class="logo" src="https://drive.google.com/uc?export=view&id=1qA2qqJgbIRDjv9oD_hdYopGEgRf_UBZi" alt="Life In Voices Logo">
 
-      const startBtn = document.getElementById("start");
-      const stopBtn = document.getElementById("stop");
-      const audio = document.getElementById("audio");
-      const status = document.getElementById("status");
+  <script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioElement = document.getElementById('audio');
+    let playerContainer = document.getElementById('playerContainer');
+    let statusMsg = document.getElementById('statusMsg');
 
-      startBtn.onclick = async () => {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        recorder = RecordRTC(stream, { type: "audio" });
-        recorder.startRecording();
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-        status.textContent = "🎙️ Recording...";
+    document.getElementById('startBtn').onclick = async function () {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
       };
 
-      stopBtn.onclick = () => {
-        recorder.stopRecording(async () => {
-          const blob = recorder.getBlob();
-          audio.src = URL.createObjectURL(blob);
-          audio.style.display = "block";
-          status.textContent = `✅ Saved as ${filename}`;
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        audioElement.src = url;
+        audioElement.style.display = 'block';
+        playerContainer.style.display = 'block';
 
-          // Upload to Make webhook
-          const formData = new FormData();
-          formData.append("file", blob, filename);
-
-          try {
-            await fetch(webhookURL, {
-              method: "POST",
-              body: formData,
-            });
-            status.textContent += " and uploaded successfully.";
-          } catch (err) {
-            status.textContent += " but failed to upload.";
-          }
-
-          stopBtn.disabled = true;
-        });
+        const downloadFilename = `LIV_unknown_Weekunknown.wav`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadFilename;
+        a.textContent = `✅ Saved as ${downloadFilename}`;
+        a.style.display = 'block';
+        statusMsg.innerHTML = '';
+        statusMsg.appendChild(a);
       };
-    </script>
-  </body>
+
+      mediaRecorder.start();
+      statusMsg.textContent = '🔴 Recording...';
+    };
+
+    document.getElementById('stopBtn').onclick = function () {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        statusMsg.textContent = 'Processing your recording...';
+      }
+    };
+
+    document.getElementById('deleteBtn').onclick = function () {
+      if (audioElement) {
+        audioElement.src = "";
+        audioElement.load();
+        playerContainer.style.display = "none";
+      }
+      statusMsg.textContent = '';
+    };
+  </script>
+</body>
 </html>
