@@ -1,152 +1,138 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Record Your Story</title>
   <style>
     body {
-      font-family: 'Cormorant Garamond', serif;
+      font-family: Georgia, serif;
       text-align: center;
+      padding: 40px;
       background-color: #fff;
       color: #111;
-      padding: 40px 20px;
-    }
-    h1 {
-      font-size: 2.5em;
-      margin-bottom: 10px;
-    }
-    p {
-      font-size: 1.1em;
-      margin-bottom: 30px;
     }
     button {
-      font-family: inherit;
-      font-size: 1.1em;
+      font-size: 1rem;
       padding: 12px 24px;
       margin: 10px;
+      border-radius: 6px;
       border: none;
-      border-radius: 10px;
-      background-color: #777;
+      background-color: #888;
       color: white;
       cursor: pointer;
     }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    button:hover {
+      background-color: #555;
     }
     audio {
-      margin: 20px auto;
-      display: block;
-      width: 100%;
-      max-width: 400px;
-    }
-    #status {
       margin-top: 20px;
-      font-size: 1em;
     }
-    img {
+    .message {
+      margin-top: 20px;
+      font-size: 0.9rem;
+    }
+    .logo {
       margin-top: 40px;
       width: 180px;
-      height: auto;
     }
   </style>
 </head>
 <body>
   <h1>Record Your Story</h1>
-  <p>Press "Start Recording" to begin. You can delete and retry as many times as you like. Only click submit when you're happy with your recording.</p>
+  <p>Press "Start Recording" to begin. When you're happy, click "Submit" to send your story.</p>
 
   <button id="startBtn">Start Recording</button>
   <button id="stopBtn" disabled>Stop Recording</button>
-  <button id="deleteBtn" disabled>Delete Recording</button>
-  <button id="submitBtn" disabled>Submit Recording</button>
+  <button id="deleteBtn" disabled>Delete</button>
+  <button id="submitBtn" disabled>Submit</button>
 
-  <audio id="audio" controls style="display: none;"></audio>
-  <div id="status"></div>
+  <div id="preview"></div>
+  <div class="message" id="message"></div>
 
-  <img src="logo.png" alt="Life In Voices Logo" style="max-width: 180px; margin-top: 40px;" />
+  <img class="logo" src="logo.png" alt="Life In Voices Logo">
 
   <script>
-    let mediaRecorder;
-    let recordedChunks = [];
+    const urlParams = new URLSearchParams(window.location.search);
+    const email = urlParams.get('email') || 'unknown';
+    const week = urlParams.get('week');
+    const questionId = urlParams.get('qid');
+    const name = urlParams.get('name') || 'Unknown';
 
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
-    const deleteBtn = document.getElementById("deleteBtn");
-    const submitBtn = document.getElementById("submitBtn");
-    const audio = document.getElementById("audio");
-    const status = document.getElementById("status");
+    let mediaRecorder;
+    let audioBlob;
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const preview = document.getElementById('preview');
+    const message = document.getElementById('message');
 
     startBtn.onclick = async () => {
-      recordedChunks = [];
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
+      const audioChunks = [];
 
       mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
-        }
+        audioChunks.push(event.data);
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        audio.src = url;
-        audio.style.display = "block";
+        audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = audioUrl;
+        preview.innerHTML = '';
+        preview.appendChild(audio);
         deleteBtn.disabled = false;
         submitBtn.disabled = false;
+        message.textContent = 'Recording complete. Preview below.';
       };
 
       mediaRecorder.start();
       startBtn.disabled = true;
       stopBtn.disabled = false;
-      status.textContent = "🎙️ Recording...";
+      message.textContent = 'Recording...';
     };
 
     stopBtn.onclick = () => {
       mediaRecorder.stop();
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      status.textContent = "⏹️ Recording stopped. Preview below.";
     };
 
     deleteBtn.onclick = () => {
-      recordedChunks = [];
-      audio.src = "";
-      audio.style.display = "none";
+      audioBlob = null;
+      preview.innerHTML = '';
+      message.textContent = 'Recording deleted. You can start again.';
       deleteBtn.disabled = true;
       submitBtn.disabled = true;
-      status.textContent = "🗑️ Recording deleted. Start again when ready.";
     };
 
     submitBtn.onclick = async () => {
-      const blob = new Blob(recordedChunks, { type: 'audio/wav' });
+      if (!audioBlob) return;
+
       const formData = new FormData();
+      const fileName = week
+        ? `LIV_${name}_Week${week}.wav`
+        : `LIV_${name}_${questionId}.wav`;
 
-      const urlParams = new URLSearchParams(window.location.search);
-      const st = urlParams.get('st') || 'unknown';
-      const week = urlParams.get('week') || 'unknown';
-      const filename = `LIV_${st}_Week${week}.wav`;
-
-      formData.append('file', blob, filename);
-      status.textContent = "⏳ Uploading...";
+      formData.append('file', audioBlob, fileName);
 
       try {
-        const response = await fetch("https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip", {
+        const response = await fetch('https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip', {
           method: 'POST',
           body: formData
         });
 
         if (response.ok) {
-          status.textContent = "✅ Uploaded successfully!";
-          submitBtn.disabled = true;
-          deleteBtn.disabled = true;
+          message.innerHTML = '<span style="color: green">✅ Uploaded successfully!</span>';
         } else {
-          status.textContent = "❌ Upload failed.";
+          message.innerHTML = '<span style="color: red">❌ Upload failed.</span>';
         }
-      } catch (err) {
-        status.textContent = "❌ Upload error.";
-        console.error(err);
+      } catch (error) {
+        message.innerHTML = '<span style="color: red">❌ Error uploading.</span>';
       }
     };
   </script>
