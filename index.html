@@ -1,118 +1,119 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Record Your Story</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond&display=swap');
-    
     body {
       font-family: 'Cormorant Garamond', serif;
       text-align: center;
       padding: 40px;
-      color: #000;
+      color: #222;
     }
-
     button {
       padding: 10px 20px;
-      margin: 10px;
       font-size: 16px;
-      border-radius: 12px;
       border: none;
-      background-color: #bbb;
-      color: white;
+      margin: 10px;
+      border-radius: 12px;
       cursor: pointer;
-      font-family: 'Cormorant Garamond', serif;
-    }
-
-    button:hover {
       background-color: #999;
+      color: white;
     }
-
-    audio {
-      margin: 20px 0;
+    button:hover {
+      background-color: #555;
     }
-
+    .hidden {
+      display: none;
+    }
     .status {
-      margin-top: 10px;
-      font-size: 14px;
+      margin-top: 20px;
+      font-size: 16px;
+      color: green;
     }
-
-    img.logo {
-      width: 120px;
+    audio {
+      margin-top: 20px;
+    }
+    img {
       margin-top: 40px;
+      max-width: 200px;
     }
   </style>
 </head>
 <body>
-  <h2>Record Your Story</h2>
+  <h1>Record Your Story</h1>
   <p>Press "Start Recording" to begin. Your file will be saved automatically.</p>
 
   <button id="startBtn">Start Recording</button>
-  <button id="stopBtn">Stop Recording</button>
-  <button id="deleteBtn">Delete Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <button id="deleteBtn" class="hidden">Delete Recording</button>
 
-  <div id="playerContainer" style="display:none;">
-    <audio id="audio" controls></audio>
-  </div>
-
+  <audio id="audioPlayer" controls class="hidden"></audio>
   <div class="status" id="statusMsg"></div>
 
-  <img src="logo.png" alt="Life In Voices Logo" style="max-width: 180px; margin-top: 40px;" />
+  <img src="logo.png" alt="Life In Voices Logo"/>
 
   <script>
     let mediaRecorder;
     let audioChunks = [];
-    let audioElement = document.getElementById('audio');
-    let playerContainer = document.getElementById('playerContainer');
-    let statusMsg = document.getElementById('statusMsg');
+    let audioURL = '';
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const audioPlayer = document.getElementById("audioPlayer");
+    const statusMsg = document.getElementById("statusMsg");
 
-    document.getElementById('startBtn').onclick = async function () {
+    startBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
-
       audioChunks = [];
 
-      mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-          audioChunks.push(event.data);
-        }
+      mediaRecorder.ondataavailable = e => {
+        audioChunks.push(e.data);
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunks, { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        audioElement.src = url;
-        audioElement.style.display = 'block';
-        playerContainer.style.display = 'block';
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioPlayer.src = audioUrl;
+        audioPlayer.classList.remove('hidden');
+        deleteBtn.classList.remove('hidden');
 
-        const downloadFilename = `LIV_unknown_Weekunknown.wav`;
+        // Construct file name from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const st = urlParams.get('st') || 'unknown';
+        const week = urlParams.get('week') || 'unknown';
+        const filename = `LIV_${st}_Week${week}.wav`;
+
         const a = document.createElement('a');
-        a.href = url;
-        a.download = downloadFilename;
-        a.textContent = `✅ Saved as ${downloadFilename}`;
-        a.style.display = 'block';
-        statusMsg.innerHTML = '';
-        statusMsg.appendChild(a);
+        a.href = audioUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        statusMsg.textContent = `✅ Saved as ${filename}`;
       };
 
       mediaRecorder.start();
-      statusMsg.textContent = '🔴 Recording...';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      statusMsg.textContent = '';
     };
 
-    document.getElementById('stopBtn').onclick = function () {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        statusMsg.textContent = 'Processing your recording...';
-      }
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     };
 
-    document.getElementById('deleteBtn').onclick = function () {
-      if (audioElement) {
-        audioElement.src = "";
-        audioElement.load();
-        playerContainer.style.display = "none";
-      }
+    deleteBtn.onclick = () => {
+      audioPlayer.pause();
+      audioPlayer.src = '';
+      audioPlayer.classList.add('hidden');
+      deleteBtn.classList.add('hidden');
       statusMsg.textContent = '';
     };
   </script>
