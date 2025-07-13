@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Life in Voices Recorder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond&display=swap" rel="stylesheet" />
+    <script src="https://cdn.webrtc-experiment.com/RecordRTC.js"></script>
+    <style>
+      body {
+        font-family: 'Cormorant Garamond', serif;
+        background: #fff;
+        color: #000;
+        text-align: center;
+        padding: 40px 20px;
+      }
+      button {
+        font-size: 18px;
+        padding: 12px 24px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        background: #000;
+        color: #fff;
+        margin: 10px;
+      }
+      button:disabled {
+        background: #aaa;
+        cursor: not-allowed;
+      }
+      #audio {
+        margin-top: 20px;
+        display: none;
+      }
+      img {
+        margin-top: 30px;
+        max-width: 140px;
+      }
+      .status {
+        margin-top: 20px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Record Your Story</h1>
+    <p>Press "Start Recording" to begin. Your file will be saved automatically.</p>
+    <button id="start">Start Recording</button>
+    <button id="stop" disabled>Stop Recording</button>
+    <br />
+    <audio id="audio" controls></audio>
+    <p class="status" id="status"></p>
+    <img src="https://drive.google.com/uc?export=view&id=1qA2qqJgbIRDjv9oD_hdYopGEgRf_UBZi" alt="Life In Voices Logo" />
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const storyteller = params.get("st") || "unknown";
+      const week = params.get("week") || "00";
+      const filename = `LIV_${storyteller}_Week${week}.wav`;
+      const webhookURL = "https://hook.integromat.com/REPLACE_WITH_YOUR_WEBHOOK";
+
+      let recorder, stream;
+
+      const startBtn = document.getElementById("start");
+      const stopBtn = document.getElementById("stop");
+      const audio = document.getElementById("audio");
+      const status = document.getElementById("status");
+
+      startBtn.onclick = async () => {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorder = RecordRTC(stream, { type: "audio" });
+        recorder.startRecording();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        status.textContent = "🎙️ Recording...";
+      };
+
+      stopBtn.onclick = () => {
+        recorder.stopRecording(async () => {
+          const blob = recorder.getBlob();
+          audio.src = URL.createObjectURL(blob);
+          audio.style.display = "block";
+          status.textContent = `✅ Saved as ${filename}`;
+
+          // Upload to Make webhook
+          const formData = new FormData();
+          formData.append("file", blob, filename);
+
+          try {
+            await fetch(webhookURL, {
+              method: "POST",
+              body: formData,
+            });
+            status.textContent += " and uploaded successfully.";
+          } catch (err) {
+            status.textContent += " but failed to upload.";
+          }
+
+          stopBtn.disabled = true;
+        });
+      };
+    </script>
+  </body>
+</html>
