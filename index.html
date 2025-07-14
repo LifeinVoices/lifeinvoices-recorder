@@ -35,7 +35,7 @@
 </head>
 <body>
   <h1>Record Your Story</h1>
-  <p>Press "Start Recording" to begin. Once you're happy, press "Submit Recording" to upload.</p>
+  <p>Press "Start Recording" to begin. You can delete and retry as many times as you like. Only click submit when you're happy with your recording.</p>
 
   <button id="startBtn">Start Recording</button>
   <button id="stopBtn" disabled>Stop Recording</button>
@@ -131,7 +131,7 @@
         });
 
         if (response.ok) {
-          status.innerHTML = `✅ Recording submitted successfully as <strong>${filename}</strong>`;
+          status.innerHTML = `✅ Recording submitted successfully`;
           submitBtn.disabled = true;
           deleteBtn.disabled = true;
         } else {
