@@ -31,13 +31,22 @@
       margin-top: 30px;
       width: 150px;
     }
+    #questionDisplay {
+      font-style: italic;
+      max-width: 600px;
+      margin: 20px auto;
+      font-size: 18px;
+    }
   </style>
 </head>
 <body>
   <h1>Record Your Story</h1>
   <p>Press "Start Recording" to begin. You can delete and retry as many times as you like. Only click submit when you're happy with your recording.</p>
 
-  <!-- ✅ All control buttons including Pause -->
+  <!-- 🧠 Display the question here -->
+  <div id="questionDisplay"></div>
+
+  <!-- 🎙️ All control buttons -->
   <button id="startBtn">Start Recording</button>
   <button id="stopBtn" disabled>Stop Recording</button>
   <button id="pauseBtn" disabled>Pause</button>
@@ -62,13 +71,16 @@
     const submitBtn = document.getElementById('submitBtn');
     const previewContainer = document.getElementById('previewContainer');
     const status = document.getElementById('status');
+    const questionDisplay = document.getElementById('questionDisplay');
 
     const urlParams = new URLSearchParams(window.location.search);
     const name = urlParams.get('name') || "unknown";
     const email = urlParams.get('email') || "noemail";
     const week = urlParams.get('week');
     const questionId = urlParams.get('questionId');
+    const questionText = urlParams.get('questionText');
 
+    // 🎤 Generate filename based on available info
     let filename = "";
     if (questionId) {
       filename = `LIV_${name}_${email}_${questionId}.wav`;
@@ -78,6 +90,18 @@
       filename = `LIV_${name}_${email}.wav`;
     }
 
+    // 🧠 Display question text
+    if (questionText) {
+      const decoded = decodeURIComponent(questionText);
+      questionDisplay.textContent = `“${decoded}”`;
+
+      // 🧼 Clean the URL to remove query parameters (for visual privacy)
+      urlParams.delete("questionText");
+      const cleanUrl = window.location.pathname + "?" + urlParams.toString();
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+
+    // 🎬 START recording
     startBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
@@ -113,6 +137,7 @@
       status.textContent = `🎙️ Recording...`;
     };
 
+    // ⏸️ PAUSE or RESUME recording
     pauseBtn.onclick = () => {
       if (!mediaRecorder) return;
 
@@ -129,6 +154,7 @@
       }
     };
 
+    // 🛑 STOP recording
     stopBtn.onclick = () => {
       mediaRecorder.stop();
       startBtn.disabled = false;
@@ -137,6 +163,7 @@
       pauseBtn.textContent = 'Pause';
     };
 
+    // 🗑️ DELETE recording
     deleteBtn.onclick = () => {
       audioChunks = [];
       audioBlob = null;
@@ -146,6 +173,7 @@
       status.textContent = '🗑️ Recording deleted. Start again when ready.';
     };
 
+    // 📤 SUBMIT recording
     submitBtn.onclick = async () => {
       if (!audioBlob) return;
 
