@@ -1,121 +1,174 @@
-<script>
-  let mediaRecorder;
-  let audioChunks = [];
-  let audioBlob;
-  let isPaused = false;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Record Your Story</title>
+  <style>
+    body {
+      font-family: 'Georgia', serif;
+      text-align: center;
+      margin-top: 40px;
+      color: #222;
+    }
+    button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin: 10px;
+      border-radius: 6px;
+      border: none;
+      background-color: #ccc;
+      cursor: pointer;
+    }
+    audio {
+      margin: 20px auto;
+      display: block;
+    }
+    .status {
+      font-size: 16px;
+      margin-top: 20px;
+    }
+    #logo {
+      margin-top: 30px;
+      width: 150px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Record Your Story</h1>
+  <p>Press "Start Recording" to begin. You can delete and retry as many times as you like. Only click submit when you're happy with your recording.</p>
 
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  const deleteBtn = document.getElementById('deleteBtn');
-  const submitBtn = document.getElementById('submitBtn');
-  const previewContainer = document.getElementById('previewContainer');
-  const status = document.getElementById('status');
+  <!-- ✅ All control buttons including Pause -->
+  <button id="startBtn">Start Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <button id="pauseBtn" disabled>Pause</button>
+  <button id="deleteBtn" disabled>Delete Recording</button>
+  <button id="submitBtn" disabled>Submit Recording</button>
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const name = urlParams.get('name') || "unknown";
-  const email = urlParams.get('email') || "noemail";
-  const week = urlParams.get('week');
-  const questionId = urlParams.get('questionId');
+  <div id="previewContainer" style="margin-top: 20px;"></div>
+  <div id="status" class="status"></div>
 
-  let filename = "";
-  if (questionId) {
-    filename = `LIV_${name}_${email}_${questionId}.wav`;
-  } else if (week) {
-    filename = `LIV_${name}_${email}_Week${week}.wav`;
-  } else {
-    filename = `LIV_${name}_${email}.wav`;
-  }
+  <img id="logo" src="logo.png" alt="Life In Voices Logo" />
 
-  startBtn.onclick = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
+  <script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioBlob;
+    let isPaused = false;
 
-    mediaRecorder.ondataavailable = e => {
-      if (e.data.size > 0) {
-        audioChunks.push(e.data);
-      }
-    };
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const previewContainer = document.getElementById('previewContainer');
+    const status = document.getElementById('status');
 
-    mediaRecorder.onstop = () => {
-      audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = document.createElement('audio');
-      audio.controls = true;
-      audio.src = audioUrl;
+    const urlParams = new URLSearchParams(window.location.search);
+    const name = urlParams.get('name') || "unknown";
+    const email = urlParams.get('email') || "noemail";
+    const week = urlParams.get('week');
+    const questionId = urlParams.get('questionId');
 
-      previewContainer.innerHTML = '';
-      previewContainer.appendChild(audio);
-      deleteBtn.disabled = false;
-      submitBtn.disabled = false;
-      pauseBtn.disabled = true;
-      status.textContent = `🎧 Ready to review.`;
-    };
-
-    mediaRecorder.start();
-    isPaused = false;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    pauseBtn.disabled = false;
-    pauseBtn.textContent = 'Pause';
-    status.textContent = `🎙️ Recording...`;
-  };
-
-  pauseBtn.onclick = () => {
-    if (!mediaRecorder) return;
-
-    if (!isPaused) {
-      mediaRecorder.pause();
-      isPaused = true;
-      pauseBtn.textContent = 'Resume';
-      status.textContent = '⏸️ Recording paused.';
+    let filename = "";
+    if (questionId) {
+      filename = `LIV_${name}_${email}_${questionId}.wav`;
+    } else if (week) {
+      filename = `LIV_${name}_${email}_Week${week}.wav`;
     } else {
-      mediaRecorder.resume();
+      filename = `LIV_${name}_${email}.wav`;
+    }
+
+    startBtn.onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) {
+          audioChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = audioUrl;
+
+        previewContainer.innerHTML = '';
+        previewContainer.appendChild(audio);
+        deleteBtn.disabled = false;
+        submitBtn.disabled = false;
+        pauseBtn.disabled = true;
+        status.textContent = `🎧 Ready to review.`;
+      };
+
+      mediaRecorder.start();
       isPaused = false;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      pauseBtn.disabled = false;
       pauseBtn.textContent = 'Pause';
-      status.textContent = '🎙️ Recording resumed...';
-    }
-  };
+      status.textContent = `🎙️ Recording...`;
+    };
 
-  stopBtn.onclick = () => {
-    mediaRecorder.stop();
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    pauseBtn.disabled = true;
-    pauseBtn.textContent = 'Pause';
-  };
+    pauseBtn.onclick = () => {
+      if (!mediaRecorder) return;
 
-  deleteBtn.onclick = () => {
-    audioChunks = [];
-    audioBlob = null;
-    previewContainer.innerHTML = '';
-    deleteBtn.disabled = true;
-    submitBtn.disabled = true;
-    status.textContent = '🗑️ Recording deleted. Start again when ready.';
-  };
-
-  submitBtn.onclick = async () => {
-    if (!audioBlob) return;
-
-    const formData = new FormData();
-    formData.append('file', audioBlob, filename);
-
-    try {
-      const response = await fetch('https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (response.ok) {
-        status.innerHTML = `✅ Recording submitted successfully`;
-        submitBtn.disabled = true;
-        deleteBtn.disabled = true;
+      if (!isPaused) {
+        mediaRecorder.pause();
+        isPaused = true;
+        pauseBtn.textContent = 'Resume';
+        status.textContent = '⏸️ Recording paused.';
       } else {
-        status.textContent = '❌ Failed to submit recording.';
+        mediaRecorder.resume();
+        isPaused = false;
+        pauseBtn.textContent = 'Pause';
+        status.textContent = '🎙️ Recording resumed...';
       }
-    } catch (error) {
-      status.textContent = '❌ Upload error: ' + error.message;
-    }
-  };
-</script>
+    };
+
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = 'Pause';
+    };
+
+    deleteBtn.onclick = () => {
+      audioChunks = [];
+      audioBlob = null;
+      previewContainer.innerHTML = '';
+      deleteBtn.disabled = true;
+      submitBtn.disabled = true;
+      status.textContent = '🗑️ Recording deleted. Start again when ready.';
+    };
+
+    submitBtn.onclick = async () => {
+      if (!audioBlob) return;
+
+      const formData = new FormData();
+      formData.append('file', audioBlob, filename);
+
+      try {
+        const response = await fetch('https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          status.innerHTML = `✅ Recording submitted successfully`;
+          submitBtn.disabled = true;
+          deleteBtn.disabled = true;
+        } else {
+          status.textContent = '❌ Failed to submit recording.';
+        }
+      } catch (error) {
+        status.textContent = '❌ Upload error: ' + error.message;
+      }
+    };
+  </script>
+</body>
+</html>
