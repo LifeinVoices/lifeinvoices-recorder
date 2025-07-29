@@ -43,10 +43,10 @@
   <h1>Record Your Story</h1>
   <p>Press "Start Recording" to begin. You can delete and retry as many times as you like. Only click submit when you're happy with your recording.</p>
 
-  <!-- 🧠 Display the question here -->
+  <!-- 🧠 Display the question -->
   <div id="questionDisplay"></div>
 
-  <!-- 🎙️ All control buttons -->
+  <!-- 🎙️ Recording controls -->
   <button id="startBtn">Start Recording</button>
   <button id="stopBtn" disabled>Stop Recording</button>
   <button id="pauseBtn" disabled>Pause</button>
@@ -78,9 +78,9 @@
     const email = urlParams.get('email') || "noemail";
     const week = urlParams.get('week');
     const questionId = urlParams.get('questionId');
-    const questionText = urlParams.get('questionText');
+    const rawText = urlParams.get('questionText');
 
-    // 🎤 Generate filename based on available info
+    // 🎤 Generate filename
     let filename = "";
     if (questionId) {
       filename = `LIV_${name}_${email}_${questionId}.wav`;
@@ -90,18 +90,23 @@
       filename = `LIV_${name}_${email}.wav`;
     }
 
-    // 🧠 Display question text
-    if (questionText) {
-      const decoded = decodeURIComponent(questionText);
-      questionDisplay.textContent = `“${decoded}”`;
+    // 🧠 Display and decode the question text
+    if (rawText) {
+      try {
+        const cleaned = rawText.trim(); // Remove trailing/leading spaces
+        const decoded = decodeURIComponent(cleaned);
+        questionDisplay.textContent = `“${decoded}”`;
 
-      // 🧼 Clean the URL to remove query parameters (for visual privacy)
-      urlParams.delete("questionText");
-      const cleanUrl = window.location.pathname + "?" + urlParams.toString();
-      window.history.replaceState({}, document.title, cleanUrl);
+        // Clean the URL (remove questionText)
+        urlParams.delete("questionText");
+        const cleanUrl = window.location.pathname + "?" + urlParams.toString();
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (e) {
+        questionDisplay.textContent = "❓ Unable to display question.";
+      }
     }
 
-    // 🎬 START recording
+    // 🎬 Start Recording
     startBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
@@ -137,7 +142,7 @@
       status.textContent = `🎙️ Recording...`;
     };
 
-    // ⏸️ PAUSE or RESUME recording
+    // ⏸️ Pause/Resume
     pauseBtn.onclick = () => {
       if (!mediaRecorder) return;
 
@@ -154,7 +159,7 @@
       }
     };
 
-    // 🛑 STOP recording
+    // 🛑 Stop
     stopBtn.onclick = () => {
       mediaRecorder.stop();
       startBtn.disabled = false;
@@ -163,7 +168,7 @@
       pauseBtn.textContent = 'Pause';
     };
 
-    // 🗑️ DELETE recording
+    // 🗑️ Delete
     deleteBtn.onclick = () => {
       audioChunks = [];
       audioBlob = null;
@@ -173,7 +178,7 @@
       status.textContent = '🗑️ Recording deleted. Start again when ready.';
     };
 
-    // 📤 SUBMIT recording
+    // 📤 Submit
     submitBtn.onclick = async () => {
       if (!audioBlob) return;
 
