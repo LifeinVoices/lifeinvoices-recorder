@@ -3,21 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <title>Record Your Story</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
       font-family: 'Georgia', serif;
       text-align: center;
       margin-top: 40px;
       color: #222;
+      padding: 0 20px;
     }
     button {
-      font-size: 18px;
-      padding: 10px 20px;
-      margin: 10px;
-      border-radius: 6px;
+      font-size: 20px;
+      padding: 16px 28px;
+      margin: 12px;
+      border-radius: 8px;
       border: none;
       background-color: #ccc;
       cursor: pointer;
+      min-width: 200px;
     }
     audio {
       margin: 20px auto;
@@ -36,6 +39,13 @@
       max-width: 600px;
       margin: 20px auto;
       font-size: 18px;
+    }
+    @media (max-width: 480px) {
+      button {
+        font-size: 22px;
+        padding: 18px 32px;
+        min-width: 90%;
+      }
     }
   </style>
 </head>
@@ -93,11 +103,11 @@
     // 🧠 Display and decode the question text
     if (rawText) {
       try {
-        const cleaned = rawText.trim(); // Remove trailing/leading spaces
+        const cleaned = rawText.trim();
         const decoded = decodeURIComponent(cleaned);
         questionDisplay.textContent = `“${decoded}”`;
 
-        // Clean the URL (remove questionText)
+        // Clean the URL to hide the question
         urlParams.delete("questionText");
         const cleanUrl = window.location.pathname + "?" + urlParams.toString();
         window.history.replaceState({}, document.title, cleanUrl);
@@ -180,7 +190,10 @@
 
     // 📤 Submit
     submitBtn.onclick = async () => {
-      if (!audioBlob) return;
+      if (!audioBlob) {
+        status.textContent = '⚠️ No recording found. Please record before submitting.';
+        return;
+      }
 
       const formData = new FormData();
       formData.append('file', audioBlob, filename);
