@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Record Your Story — Safe Recorder (Multi-Take + Auto-Save + Audit Trail)</title>
+  <title>Record Your Story — Safe Recorder (Isolated per Question + Auto-Save + Audit Trail)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root{ --bg:#ffffff; --fg:#222; --muted:#666; --ok:#2E7D32; --warn:#C0392B; --btn:#ccc; --brand:#1B4D3E; }
@@ -26,7 +26,7 @@
     /* Question block */
     #questionWrapper{ margin:20px auto; }
     #questionWrapper h3{ margin:0 0 6px; color:var(--brand); }
-    #questionDisplay{ font-style:italic; font-size:18px; color:var(--fg); }
+    #questionDisplay{ font-style:italic; font-size:18px; color:var(--fg); word-break:break-word; }
 
     /* Mic indicator */
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; vertical-align:middle; }
@@ -45,9 +45,10 @@
 
     @media (max-width:900px){ button{ max-width:520px; } }
 
-    /* Filter row */
-    .filters { display:flex; align-items:center; justify-content:center; gap:10px; margin:14px 0 6px; font-size:14px; color:#444; }
-    .filters input { transform: translateY(1px); }
+    /* Row with filters + clear button */
+    .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:center; margin:14px 0 6px; }
+    .row .inline { display:inline-flex; align-items:center; gap:8px; font-size:14px; color:#444; }
+    .row .ghost { background:#eee; }
   </style>
 </head>
 <body>
@@ -55,7 +56,7 @@
   <p class="lead">
     Press “Start Recording” to begin. Click “Stop” to save a take.
     You can record multiple takes and select one or more to submit.
-    Your takes are auto-saved and will survive refreshes or crashes.
+    Your takes are auto-saved (per person & question) and survive refreshes or crashes.
   </p>
 
   <!-- Question -->
@@ -78,9 +79,10 @@
   <button id="deleteBtn" disabled>Delete Selected Take(s)</button>
   <button id="submitBtn" disabled>Submit Selected Take(s)</button>
 
-  <!-- Filters -->
-  <div class="filters">
-    <label><input type="checkbox" id="showSubmitted"> Show submitted takes</label>
+  <!-- Filters + Clear -->
+  <div class="row">
+    <label class="inline"><input type="checkbox" id="showSubmitted"> Show submitted takes</label>
+    <button id="clearThisGroupBtn" class="ghost" style="max-width:260px;">Clear saved for this question</button>
   </div>
 
   <div id="takesContainer" style="margin-top:8px;"></div>
@@ -96,6 +98,29 @@
     const MIN_DURATION_MS = 1000;
     const MIN_SIZE_BYTES = 5000;
 
+    // ======= URL params (filenames + question text) =======
+    const urlParams = new URLSearchParams(window.location.search);
+    const name = urlParams.get('name') || "unknown";
+    const email = urlParams.get('email') || "noemail";
+    const week = urlParams.get('week');
+    const questionId = urlParams.get('questionId');
+
+    // Accept multiple keys for question text
+    const rawText =
+      urlParams.get('questionText') ??
+      urlParams.get('question') ??
+      urlParams.get('q');
+
+    // 🎤 Filename base + idempotency key + group key (isolation)
+    const base = questionId ? `LIV_${name}_${email}_${questionId}`
+                 : week ? `LIV_${name}_${email}_Week${week}`
+                 : `LIV_${name}_${email}`;
+    const IDEMPOTENCY_KEY = base;
+    // groupKey isolates takes per person+question
+    const GROUP_KEY = questionId ? `QID:${name}|${email}|${questionId}`
+                      : week ? `WEEK:${name}|${email}|${week}`
+                      : `GEN:${name}|${email}`;
+
     // ======= IndexedDB (auto-save) =======
     const DB_NAME = 'liv-recorder';
     const DB_STORE = 'takes';
@@ -103,15 +128,17 @@
 
     function openDB(){
       return new Promise((resolve, reject)=>{
-        const req = indexedDB.open(DB_NAME, 2);
+        const req = indexedDB.open(DB_NAME, 3); // bump to v3 for groupKey
         req.onupgradeneeded = (e)=>{
           const d = e.target.result;
           if (!d.objectStoreNames.contains(DB_STORE)){
             const store = d.createObjectStore(DB_STORE, { keyPath:'id', autoIncrement:true });
             store.createIndex('createdAt','createdAt');
+            store.createIndex('groupKey','groupKey',{unique:false});
           } else {
             const store = e.target.transaction.objectStore(DB_STORE);
             if (!store.indexNames.contains('createdAt')) store.createIndex('createdAt','createdAt');
+            if (!store.indexNames.contains('groupKey')) store.createIndex('groupKey','groupKey',{unique:false});
           }
         };
         req.onsuccess = ()=>{ db = req.result; resolve(db); };
@@ -129,7 +156,7 @@
     let stream, audioCtx, analyser, sourceNode;
     let levelTimer = null, startTime = 0, stopTime = 0, silentStreakMs = 0, totalChecks = 0, silentChecks = 0, goodAudioMs = 0;
 
-    // Each take: { id, blob, url, label, durMs, size, createdAt, submitted }
+    // Each take: { id, blob, url, label, durMs, size, createdAt, submitted, groupKey }
     let takes = [];
 
     const els = {
@@ -144,41 +171,16 @@
       micPill: document.getElementById('micPill'),
       levelBar: document.getElementById('levelBar'),
       showSubmitted: document.getElementById('showSubmitted'),
+      clearThisGroupBtn: document.getElementById('clearThisGroupBtn'),
     };
-
-    // ======= URL params (filenames + question text) =======
-    const urlParams = new URLSearchParams(window.location.search);
-    const name = urlParams.get('name') || "unknown";
-    const email = urlParams.get('email') || "noemail";
-    const week = urlParams.get('week');
-    const questionId = urlParams.get('questionId');
-
-    // Accept multiple keys for question text
-    const rawText =
-      urlParams.get('questionText') ??
-      urlParams.get('question') ??
-      urlParams.get('q');
-
-    // 🎤 Filename base + idempotency key
-    const base = questionId ? `LIV_${name}_${email}_${questionId}`
-                 : week ? `LIV_${name}_${email}_Week${week}`
-                 : `LIV_${name}_${email}`;
-    const IDEMPOTENCY_KEY = base;
 
     // ===== Question display (robust decode + hide if empty) =====
     (function showQuestion(){
       const wrap = document.getElementById('questionWrapper');
-
       if (!rawText) { if (wrap) wrap.style.display = 'none'; return; }
-
-      // robust decode: handle '+' as spaces and tolerate already-decoded input
       let decoded = rawText;
       try { decoded = decodeURIComponent(String(rawText).replace(/\+/g,' ')); } catch { decoded = rawText; }
-
-      // render
       els.question.textContent = `“${decoded}”`;
-
-      // clean URL (remove whichever key was used)
       ['questionText','question','q'].forEach(k => urlParams.delete(k));
       const q = urlParams.toString();
       const cleanUrl = window.location.pathname + (q ? '?' + q : '');
@@ -243,13 +245,14 @@
 
       const showSubmitted = els.showSubmitted.checked;
       takes.forEach((t, i) => {
-        if (!showSubmitted && t.submitted) return;
+        if (t.groupKey !== GROUP_KEY) return;            // isolate
+        if (!showSubmitted && t.submitted) return;       // hide submitted unless opted in
 
         const row = document.createElement('div'); row.className = 'take'; row.dataset.id = t.id;
         const header = document.createElement('header');
         const labelWrap = document.createElement('label');
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.name = 'selectedTake'; cb.value = String(i);
-        if (!t.submitted && i === takes.length - 1) cb.checked = true;
+        if (!t.submitted) cb.checked = true;
 
         const title = document.createElement('strong'); title.textContent = `${t.label}`;
         const meta = document.createElement('span'); meta.className = 'meta';
@@ -263,38 +266,65 @@
         els.takes.appendChild(row);
       });
 
-      const anyPending = takes.some(t => !t.submitted);
+      const anyPending = takes.some(t => t.groupKey === GROUP_KEY && !t.submitted);
       els.submitBtn.disabled = !anyPending;
-      els.deleteBtn.disabled = takes.length === 0;
+      els.deleteBtn.disabled = !takes.some(t => t.groupKey === GROUP_KEY);
     }
 
     async function hydrateFromDB(){
       try {
         await openDB();
         const all = await idbGetAll();
-        all.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+        // Filter to this group only; attach object URLs
+        const filtered = all.filter(r => r.groupKey === GROUP_KEY);
+        filtered.sort((a,b)=> (a.createdAt||0) - (b.createdAt||0));
+        // also keep (hidden) others in memory only so deletion by id works if needed
         takes = all.map((r, idx)=>({
           id: r.id,
           blob: r.blob,
           url: URL.createObjectURL(r.blob),
-          label: r.label || `Take ${idx+1}`,
+          label: r.label || `Take`,
           durMs: r.durMs || 0,
           size: r.blob ? r.blob.size : (r.size||0),
           createdAt: r.createdAt || Date.now(),
-          submitted: !!r.submitted
+          submitted: !!r.submitted,
+          groupKey: r.groupKey || null   // legacy entries have null; they won't render
         }));
         renderTakes();
       } catch (e) { console.warn('IndexedDB load failed', e); }
     }
 
-    window.addEventListener('beforeunload', (e) => { if (takes.length){ e.preventDefault(); e.returnValue = ''; } });
-    els.showSubmitted.addEventListener('change', renderTakes);
+    window.addEventListener('beforeunload', (e) => { 
+      if (takes.some(t => t.groupKey === GROUP_KEY)) { e.preventDefault(); e.returnValue = ''; } 
+    });
 
     // ===== Controls =====
-    els.startBtn.onclick = async () => {
+    document.getElementById('showSubmitted').addEventListener('change', renderTakes);
+
+    // Clear only this group's saved takes (local device)
+    els.clearThisGroupBtn.onclick = async () => {
+      try {
+        await openDB();
+        const current = takes.filter(t => t.groupKey === GROUP_KEY);
+        for (const t of current){
+          if (t.id != null) { try { await idbDelete(t.id); } catch{} }
+          try { URL.revokeObjectURL(t.url); } catch{}
+        }
+        // prune memory
+        takes = takes.filter(t => t.groupKey !== GROUP_KEY);
+        renderTakes();
+        els.status.textContent = '🧹 Cleared saved takes for this question on this device.';
+      } catch (e) {
+        els.status.textContent = '⚠️ Could not clear saved takes: ' + (e?.message || e);
+      }
+    };
+
+    let mediaRecorder;
+    document.getElementById('startBtn').onclick = async () => {
       try {
         resetForNewTake();
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+        const streamReq = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+        stream = streamReq;
         try { const [track] = stream.getAudioTracks(); await track.applyConstraints({ echoCancellation:false, noiseSuppression:false, autoGainControl:false }); } catch {}
         setupAnalyser(stream); startLevelMonitor();
 
@@ -306,19 +336,19 @@
         mediaRecorder.onstop = async () => {
           stopTime = Date.now(); stopLevelMonitor();
           if (!audioChunks.length){ els.status.innerHTML = '❌ No audio data was captured. Please check your microphone and try again.'; return; }
-          audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
           const audioUrl = URL.createObjectURL(audioBlob);
           const durMs = stopTime - startTime; const size = audioBlob.size || 0;
-          const label = `Take ${takes.length + 1}`;
+          const label = `Take ${takes.filter(t => t.groupKey === GROUP_KEY).length + 1}`;
 
-          const record = { blob: audioBlob, label, durMs, size, createdAt: Date.now(), submitted:false };
+          const record = { blob: audioBlob, label, durMs, size, createdAt: Date.now(), submitted:false, groupKey: GROUP_KEY };
           try {
             await openDB();
             const newId = await idbAddTake(record);
-            const take = { id:newId, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: record.createdAt, submitted:false };
+            const take = { id:newId, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: record.createdAt, submitted:false, groupKey: GROUP_KEY };
             takes.push(take);
             renderTakes();
-            els.pauseBtn.disabled = true;
+            document.getElementById('pauseBtn').disabled = true;
 
             if (durMs < MIN_DURATION_MS || size < MIN_SIZE_BYTES){
               els.status.innerHTML = `⚠️ ${label} may be too short or small. You can record another take or delete this one.`;
@@ -327,16 +357,16 @@
             }
           } catch (e){
             console.warn('IndexedDB save failed', e);
-            const take = { id:null, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: Date.now(), submitted:false };
+            const take = { id:null, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: Date.now(), submitted:false, groupKey: GROUP_KEY };
             takes.push(take);
             renderTakes();
-            els.pauseBtn.disabled = true;
+            document.getElementById('pauseBtn').disabled = true;
           }
         };
 
         mediaRecorder.start(250); // flush chunks to avoid missing first words
         isPaused = false;
-        els.startBtn.disabled = true; els.stopBtn.disabled = false; els.pauseBtn.disabled = false; els.pauseBtn.textContent = 'Pause';
+        document.getElementById('startBtn').disabled = true; document.getElementById('stopBtn').disabled = false; document.getElementById('pauseBtn').disabled = false; document.getElementById('pauseBtn').textContent = 'Pause';
 
         const [track] = stream.getAudioTracks();
         track.onmute = () => { els.status.innerHTML = '⚠️ Your microphone was muted by the system/browser. Unmute to continue.'; };
@@ -345,44 +375,46 @@
       } catch (err) { els.status.innerHTML = '❌ Unable to access microphone: ' + (err && err.message ? err.message : err); }
     };
 
-    els.pauseBtn.onclick = () => {
+    document.getElementById('pauseBtn').onclick = () => {
       if (!mediaRecorder) return;
-      if (!isPaused) { mediaRecorder.pause(); isPaused = true; els.pauseBtn.textContent = 'Resume'; }
-      else { mediaRecorder.resume(); isPaused = false; els.pauseBtn.textContent = 'Pause'; }
+      if (!isPaused) { mediaRecorder.pause(); isPaused = true; document.getElementById('pauseBtn').textContent = 'Resume'; }
+      else { mediaRecorder.resume(); isPaused = false; document.getElementById('pauseBtn').textContent = 'Pause'; }
     };
 
-    els.stopBtn.onclick = () => {
+    document.getElementById('stopBtn').onclick = () => {
       try { mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop(); } catch {}
-      els.startBtn.disabled = false; els.stopBtn.disabled = true; els.pauseBtn.disabled = true; els.pauseBtn.textContent = 'Pause';
+      document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true; document.getElementById('pauseBtn').disabled = true; document.getElementById('pauseBtn').textContent = 'Pause';
     };
 
-    els.deleteBtn.onclick = async () => {
+    document.getElementById('deleteBtn').onclick = async () => {
       const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
       if (!selected.length) { els.status.textContent = 'Select at least one take to delete.'; return; }
+      // delete only takes from this group
       const indexes = selected.map(c => parseInt(c.value, 10)).sort((a,b)=>b-a);
       for (const i of indexes){
         const t = takes[i];
-        if (t && t.id != null){ try { await openDB(); await idbDelete(t.id); } catch(e){ console.warn('IDB delete failed', e); } }
+        if (!t || t.groupKey !== GROUP_KEY) continue;
+        if (t.id != null){ try { await openDB(); await idbDelete(t.id); } catch(e){ console.warn('IDB delete failed', e); } }
         try { URL.revokeObjectURL(t.url); } catch{}
         takes.splice(i,1);
       }
       renderTakes();
-      els.status.textContent = takes.length ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes deleted. Start again when ready.';
+      els.status.textContent = takes.some(t => t.groupKey === GROUP_KEY) ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes for this question deleted.';
     };
 
     // Submit selected takes sequentially; include idempotencyKey; mark submitted; delay between posts
-    els.submitBtn.onclick = async () => {
+    document.getElementById('submitBtn').onclick = async () => {
       const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
       if (!selected.length) { els.status.textContent = '⚠️ Select at least one take to submit.'; return; }
 
-      els.submitBtn.disabled = true;
+      document.getElementById('submitBtn').disabled = true;
       els.status.innerHTML = '📤 Uploading…';
 
       let ok = 0, fail = 0;
       for (const cb of selected){
         const idx = parseInt(cb.value, 10);
         const chosen = takes[idx];
-        if (!chosen || !chosen.blob || chosen.blob.size < MIN_SIZE_BYTES){ fail++; continue; }
+        if (!chosen || chosen.groupKey !== GROUP_KEY || !chosen.blob || chosen.blob.size < MIN_SIZE_BYTES){ fail++; continue; }
 
         const formData = new FormData();
         const cleanLabel = (chosen.label||'Take').replace(/\s+/g,'');
@@ -398,23 +430,24 @@
             if (chosen.id != null){
               try {
                 await openDB();
-                await idbPut({ id: chosen.id, blob: chosen.blob, label: chosen.label, durMs: chosen.durMs, size: chosen.size, createdAt: chosen.createdAt, submitted: true });
+                await idbPut({ id: chosen.id, blob: chosen.blob, label: chosen.label, durMs: chosen.durMs, size: chosen.size, createdAt: chosen.createdAt, submitted: true, groupKey: GROUP_KEY });
               } catch(e){ console.warn('IDB update failed', e); }
             }
           } else { fail++; }
         } catch (e) { fail++; }
 
-        // Give Make a beat between runs so it follows the correct route
+        // Separate webhook runs for Make
         await new Promise(r => setTimeout(r, 750));
       }
 
       els.status.innerHTML = `📤 Upload complete: <strong>${ok}</strong> succeeded, <strong>${fail}</strong> failed.`;
-      els.submitBtn.disabled = false;
+      document.getElementById('submitBtn').disabled = false;
       renderTakes(); // hides newly submitted if toggle is off
     };
 
-    // Hydrate saved takes on load
-    hydrateFromDB();
+    // Hydrate saved takes for this question on load
+    (async ()=>{ await hydrateFromDB(); })();
+
   </script>
 </body>
 </html>
