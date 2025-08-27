@@ -26,7 +26,7 @@
     /* Question block */
     #questionWrapper{ margin:20px auto; }
     #questionWrapper h3{ margin:0 0 6px; color:var(--brand); }
-    #questionDisplay{ font-style:italic; font-size:18px; }
+    #questionDisplay{ font-style:italic; font-size:18px; color:var(--fg); }
 
     /* Mic indicator */
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; vertical-align:middle; }
@@ -165,17 +165,24 @@
                  : `LIV_${name}_${email}`;
     const IDEMPOTENCY_KEY = base;
 
-    // Show question (and clean it from URL)
+    // ===== Question display (robust decode + hide if empty) =====
     (function showQuestion(){
-      if (!rawText) return;
-      try {
-        const cleaned = String(rawText).trim();
-        const decoded = decodeURIComponent(cleaned);
-        els.question.textContent = `“${decoded}”`;
-        ['questionText','question','q'].forEach(k => urlParams.delete(k));
-        const cleanUrl = window.location.pathname + "?" + urlParams.toString();
-        window.history.replaceState({}, document.title, cleanUrl);
-      } catch { els.question.textContent = '❓ Unable to display question.'; }
+      const wrap = document.getElementById('questionWrapper');
+
+      if (!rawText) { if (wrap) wrap.style.display = 'none'; return; }
+
+      // robust decode: handle '+' as spaces and tolerate already-decoded input
+      let decoded = rawText;
+      try { decoded = decodeURIComponent(String(rawText).replace(/\+/g,' ')); } catch { decoded = rawText; }
+
+      // render
+      els.question.textContent = `“${decoded}”`;
+
+      // clean URL (remove whichever key was used)
+      ['questionText','question','q'].forEach(k => urlParams.delete(k));
+      const q = urlParams.toString();
+      const cleanUrl = window.location.pathname + (q ? '?' + q : '');
+      window.history.replaceState({}, document.title, cleanUrl);
     })();
 
     // ======= Mic / level helpers =======
@@ -284,7 +291,6 @@
     els.showSubmitted.addEventListener('change', renderTakes);
 
     // ===== Controls =====
-    let mediaRecorder;
     els.startBtn.onclick = async () => {
       try {
         resetForNewTake();
