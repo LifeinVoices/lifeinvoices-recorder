@@ -5,15 +5,15 @@
   <title>Record Your Story — Safe Recorder (Multi-Take + Auto-Save + Audit Trail)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    :root{ --bg:#ffffff; --fg:#222; --muted:#666; --ok:#2E7D32; --warn:#C0392B; --btn:#ccc; }
+    :root{ --bg:#ffffff; --fg:#222; --muted:#666; --ok:#2E7D32; --warn:#C0392B; --btn:#ccc; --brand:#1B4D3E; }
     html,body{ background:var(--bg); color:var(--fg) }
     body { font-family: Georgia, serif; text-align:center; margin:40px auto; padding:0 20px; max-width:760px; }
     h1 { margin-bottom:6px; }
     p.lead { margin-top:0; color:var(--muted); }
 
     /* Buttons: full-width, vertically stacked, consistent size */
-    button {
-      box-sizing: border-box; display:block; width:100%; max-width:420px;
+    button{
+      box-sizing:border-box; display:block; width:100%; max-width:420px;
       font-size:20px; padding:16px 24px; margin:10px auto; border-radius:10px;
       border:none; background:var(--btn); cursor:pointer; box-shadow:0 2px 0 rgba(0,0,0,.08);
     }
@@ -22,15 +22,21 @@
     audio { margin:8px auto; display:block; width:100%; max-width:520px; }
     .status { font-size:16px; margin-top:14px; min-height:22px; }
     #logo { margin-top:26px; width:150px; }
-    #questionDisplay { font-style:italic; max-width:640px; margin:12px auto 20px; font-size:18px; }
 
+    /* Question block */
+    #questionWrapper{ margin:20px auto; }
+    #questionWrapper h3{ margin:0 0 6px; color:var(--brand); }
+    #questionDisplay{ font-style:italic; font-size:18px; }
+
+    /* Mic indicator */
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; vertical-align:middle; }
     .pill.ok { background:#E8F5E9; color:var(--ok); }
     .pill.warn { background:#FDECEA; color:var(--warn); }
     .bar-wrap{ margin:8px auto 0; width:240px; height:10px; background:#eee; border-radius:999px; overflow:hidden; }
-    .bar{ height:100%; width:0%; background:linear-gradient(90deg, #8BC34A, #FFC107); transition:width .18s linear; }
+    .bar{ height:100%; width:0%; background:linear-gradient(90deg, #8BC34A, #FFC107); transition: width .18s linear; }
     .tips { font-size:14px; color:var(--muted); margin-top:10px; }
 
+    /* Takes list */
     .take { text-align:left; margin:10px 0; padding:10px; border:1px solid #eee; border-radius:10px; }
     .take header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
     .take header label { display:flex; align-items:center; gap:8px; cursor:pointer; }
@@ -38,6 +44,8 @@
     .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef; margin-left:8px; }
 
     @media (max-width:900px){ button{ max-width:520px; } }
+
+    /* Filter row */
     .filters { display:flex; align-items:center; justify-content:center; gap:10px; margin:14px 0 6px; font-size:14px; color:#444; }
     .filters input { transform: translateY(1px); }
   </style>
@@ -51,11 +59,10 @@
   </p>
 
   <!-- Question -->
-  <div id="questionWrapper" style="margin:20px auto;">
-  <h3 style="margin-bottom:6px;">Question:</h3>
-  <div id="questionDisplay" style="font-style:italic; font-size:18px;"></div>
-</div>
-
+  <div id="questionWrapper">
+    <h3>Question:</h3>
+    <div id="questionDisplay"></div>
+  </div>
 
   <!-- Mic health indicator -->
   <div id="micRow" aria-live="polite" style="margin:10px 0 18px;">
@@ -64,13 +71,14 @@
     <div class="tips">If the bar doesn't move when you talk, check browser mic permissions and device settings.</div>
   </div>
 
-  <!-- Controls -->
+  <!-- Controls (stacked by CSS) -->
   <button id="startBtn">Start Recording</button>
   <button id="pauseBtn" disabled>Pause</button>
   <button id="stopBtn" disabled>Stop Recording</button>
   <button id="deleteBtn" disabled>Delete Selected Take(s)</button>
   <button id="submitBtn" disabled>Submit Selected Take(s)</button>
 
+  <!-- Filters -->
   <div class="filters">
     <label><input type="checkbox" id="showSubmitted"> Show submitted takes</label>
   </div>
@@ -110,10 +118,10 @@
         req.onerror = ()=> reject(req.error);
       });
     }
-    function idbAddTake(rec){ return new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.add(rec); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
-    function idbGetAll(){ return new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readonly'); const st=tx.objectStore(DB_STORE); const r=st.getAll(); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); }); }
-    function idbPut(rec){ return new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.put(rec); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
-    function idbDelete(id){ return new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
+    const idbAddTake = rec => new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.add(rec); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+    const idbGetAll = () => new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readonly'); const st=tx.objectStore(DB_STORE); const r=st.getAll(); r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); });
+    const idbPut    = rec => new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.put(rec); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+    const idbDelete = id  => new Promise((res,rej)=>{ const tx=db.transaction(DB_STORE,'readwrite'); const st=tx.objectStore(DB_STORE); const r=st.delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
 
     // ======= Recorder state =======
     let mediaRecorder, audioChunks = [], audioBlob;
@@ -138,39 +146,36 @@
       showSubmitted: document.getElementById('showSubmitted'),
     };
 
-    // ======= URL params (for filenames + question text) =======
+    // ======= URL params (filenames + question text) =======
     const urlParams = new URLSearchParams(window.location.search);
     const name = urlParams.get('name') || "unknown";
     const email = urlParams.get('email') || "noemail";
     const week = urlParams.get('week');
     const questionId = urlParams.get('questionId');
 
-    // Accept legacy/new param keys for the prompt
+    // Accept multiple keys for question text
     const rawText =
       urlParams.get('questionText') ??
       urlParams.get('question') ??
       urlParams.get('q');
 
-    // 🎤 Generate filename base + idempotency key for Make
+    // 🎤 Filename base + idempotency key
     const base = questionId ? `LIV_${name}_${email}_${questionId}`
                  : week ? `LIV_${name}_${email}_Week${week}`
                  : `LIV_${name}_${email}`;
     const IDEMPOTENCY_KEY = base;
 
-    // ===== Question display (and clean the URL) =====
+    // Show question (and clean it from URL)
     (function showQuestion(){
       if (!rawText) return;
       try {
         const cleaned = String(rawText).trim();
         const decoded = decodeURIComponent(cleaned);
         els.question.textContent = `“${decoded}”`;
-        // remove whichever key was used
         ['questionText','question','q'].forEach(k => urlParams.delete(k));
         const cleanUrl = window.location.pathname + "?" + urlParams.toString();
         window.history.replaceState({}, document.title, cleanUrl);
-      } catch {
-        els.question.textContent = '❓ Unable to display question.';
-      }
+      } catch { els.question.textContent = '❓ Unable to display question.'; }
     })();
 
     // ======= Mic / level helpers =======
@@ -279,9 +284,6 @@
     els.showSubmitted.addEventListener('change', renderTakes);
 
     // ===== Controls =====
-    let IDEMPOTENCY_KEY; // set after base known
-    IDEMPOTENCY_KEY = base;
-
     let mediaRecorder;
     els.startBtn.onclick = async () => {
       try {
@@ -326,7 +328,7 @@
           }
         };
 
-        mediaRecorder.start(250); // flush chunks
+        mediaRecorder.start(250); // flush chunks to avoid missing first words
         isPaused = false;
         els.startBtn.disabled = true; els.stopBtn.disabled = false; els.pauseBtn.disabled = false; els.pauseBtn.textContent = 'Pause';
 
@@ -337,8 +339,16 @@
       } catch (err) { els.status.innerHTML = '❌ Unable to access microphone: ' + (err && err.message ? err.message : err); }
     };
 
-    els.pauseBtn.onclick = () => { if (!mediaRecorder) return; if (!isPaused) { mediaRecorder.pause(); isPaused = true; els.pauseBtn.textContent = 'Resume'; } else { mediaRecorder.resume(); isPaused = false; els.pauseBtn.textContent = 'Pause'; } };
-    els.stopBtn.onclick = () => { try { mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop(); } catch {} els.startBtn.disabled = false; els.stopBtn.disabled = true; els.pauseBtn.disabled = true; els.pauseBtn.textContent = 'Pause'; };
+    els.pauseBtn.onclick = () => {
+      if (!mediaRecorder) return;
+      if (!isPaused) { mediaRecorder.pause(); isPaused = true; els.pauseBtn.textContent = 'Resume'; }
+      else { mediaRecorder.resume(); isPaused = false; els.pauseBtn.textContent = 'Pause'; }
+    };
+
+    els.stopBtn.onclick = () => {
+      try { mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop(); } catch {}
+      els.startBtn.disabled = false; els.stopBtn.disabled = true; els.pauseBtn.disabled = true; els.pauseBtn.textContent = 'Pause';
+    };
 
     els.deleteBtn.onclick = async () => {
       const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
@@ -354,7 +364,7 @@
       els.status.textContent = takes.length ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes deleted. Start again when ready.';
     };
 
-    // Submit selected takes sequentially with spacing + idempotency key; mark submitted (audit trail)
+    // Submit selected takes sequentially; include idempotencyKey; mark submitted; delay between posts
     els.submitBtn.onclick = async () => {
       const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
       if (!selected.length) { els.status.textContent = '⚠️ Select at least one take to submit.'; return; }
@@ -388,14 +398,16 @@
           } else { fail++; }
         } catch (e) { fail++; }
 
-        await new Promise(r => setTimeout(r, 750)); // spacing
+        // Give Make a beat between runs so it follows the correct route
+        await new Promise(r => setTimeout(r, 750));
       }
 
       els.status.innerHTML = `📤 Upload complete: <strong>${ok}</strong> succeeded, <strong>${fail}</strong> failed.`;
       els.submitBtn.disabled = false;
-      renderTakes(); // hides submitted unless toggle is on
+      renderTakes(); // hides newly submitted if toggle is off
     };
 
+    // Hydrate saved takes on load
     hydrateFromDB();
   </script>
 </body>
