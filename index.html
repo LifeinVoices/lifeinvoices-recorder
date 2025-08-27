@@ -2,40 +2,75 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Record Your Story — Safe Recorder (Multi-Take + Auto-Save)</title>
+  <title>Record Your Story — Safe Recorder (Multi-Take + Auto-Save + Audit Trail)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    :root{ --bg:#ffffff; --fg:#222; --muted:#666; --accent:#1B4D3E; --warn:#C0392B; --ok:#2E7D32; --btn:#ccc; }
-    html,body{background:var(--bg);color:var(--fg)}
-    body { font-family: 'Georgia', serif; text-align: center; margin: 40px auto; padding: 0 20px; max-width: 760px; }
-    h1 { margin-bottom: 6px; }
-    p.lead { margin-top: 0; color: var(--muted); }
-    .controls{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center; margin-bottom:6px; }
-    .controls-secondary{ display:flex; gap:12px; justify-content:center; align-items:center; margin-bottom:10px; }
-    button { font-size: 20px; padding: 14px 22px; border-radius: 10px; border: none; background: var(--btn); cursor: pointer; min-width: 180px; box-shadow: 0 2px 0 rgba(0,0,0,.08); }
+    :root{
+      --bg:#ffffff; --fg:#222; --muted:#666;
+      --ok:#2E7D32; --warn:#C0392B; --btn:#ccc;
+    }
+    html,body{ background:var(--bg); color:var(--fg) }
+    body { font-family: Georgia, serif; text-align:center; margin:40px auto; padding:0 20px; max-width:760px; }
+    h1 { margin-bottom:6px; }
+    p.lead { margin-top:0; color:var(--muted); }
+
+    /* Buttons: full-width, vertically stacked, consistent size */
+    button {
+      box-sizing: border-box;
+      display: block;
+      width: 100%;
+      max-width: 420px;
+      font-size: 20px;
+      padding: 16px 24px;
+      margin: 10px auto;
+      border-radius: 10px;
+      border: none;
+      background: var(--btn);
+      cursor: pointer;
+      box-shadow: 0 2px 0 rgba(0,0,0,.08);
+    }
     button[disabled]{ opacity:.55; cursor:not-allowed }
-    audio { margin: 8px 0; display: block; width: 100%; max-width: 520px; }
-    .status { font-size: 16px; margin-top: 14px; min-height: 22px; }
-    #logo { margin-top: 26px; width: 150px; }
-    #questionDisplay { font-style: italic; max-width: 640px; margin: 12px auto 20px; font-size: 18px; }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; vertical-align: middle; }
-    .pill.ok { background: #E8F5E9; color: var(--ok); }
-    .pill.warn { background: #FDECEA; color: var(--warn); }
+
+    /* Audio & misc */
+    audio { margin:8px auto; display:block; width:100%; max-width:520px; }
+    .status { font-size:16px; margin-top:14px; min-height:22px; }
+    #logo { margin-top:26px; width:150px; }
+    #questionDisplay { font-style: italic; max-width:640px; margin:12px auto 20px; font-size:18px; }
+
+    /* Mic indicator */
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; vertical-align:middle; }
+    .pill.ok { background:#E8F5E9; color:var(--ok); }
+    .pill.warn { background:#FDECEA; color:var(--warn); }
     .bar-wrap{ margin:8px auto 0; width:240px; height:10px; background:#eee; border-radius:999px; overflow:hidden; }
-    .bar{ height:100%; width:0%; background: linear-gradient(90deg, #8BC34A, #FFC107); transition: width .18s linear; }
-    .tips { font-size: 14px; color: var(--muted); margin-top: 10px; }
-    .take { text-align:left; margin: 10px 0; padding: 10px; border: 1px solid #eee; border-radius: 10px; }
+    .bar{ height:100%; width:0%; background:linear-gradient(90deg, #8BC34A, #FFC107); transition: width .18s linear; }
+    .tips { font-size:14px; color:var(--muted); margin-top:10px; }
+
+    /* Takes list */
+    .take { text-align:left; margin:10px 0; padding:10px; border:1px solid #eee; border-radius:10px; }
     .take header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
     .take header label { display:flex; align-items:center; gap:8px; cursor:pointer; }
-    .take .meta { font-size: 13px; color: #666; }
-    @media (max-width: 480px) { button { font-size: 20px; padding: 16px 20px; min-width: 46%; } }
+    .take .meta { font-size:13px; color:#666; }
+    .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef; margin-left:8px; }
+
+    /* Slightly wider on narrow screens but still stacked */
+    @media (max-width: 900px) {
+      button { max-width: 520px; }
+    }
+
+    /* Tiny filter row */
+    .filters { display:flex; align-items:center; justify-content:center; gap:10px; margin:14px 0 6px; font-size:14px; color:#444; }
+    .filters input { transform: translateY(1px); }
   </style>
 </head>
 <body>
   <h1>Record Your Story</h1>
-  <p class="lead">Press "Start Recording" to begin. Click "Stop" to save a take. You can record multiple takes and select one or more to submit. Your takes are auto-saved and will survive refreshes or crashes.</p>
+  <p class="lead">
+    Press “Start Recording” to begin. Click “Stop” to save a take.
+    You can record multiple takes and select one or more to submit.
+    Your takes are auto-saved and will survive refreshes or crashes.
+  </p>
 
-  <!-- 🧠 Display the question -->
+  <!-- Question -->
   <div id="questionDisplay"></div>
 
   <!-- Mic health indicator -->
@@ -45,25 +80,26 @@
     <div class="tips">If the bar doesn't move when you talk, check browser mic permissions and device settings.</div>
   </div>
 
-  <!-- 🎙️ Recording controls -->
-  <div class="controls">
-    <button id="startBtn">Start Recording</button>
-    <button id="pauseBtn" disabled>Pause</button>
-  </div>
-  <div class="controls-secondary">
-    <button id="stopBtn" disabled>Stop Recording</button>
-    <button id="deleteBtn" disabled>Delete Selected Take(s)</button>
-    <button id="submitBtn" disabled>Submit Selected Take(s)</button>
+  <!-- Controls (stacked by CSS) -->
+  <button id="startBtn">Start Recording</button>
+  <button id="pauseBtn" disabled>Pause</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <button id="deleteBtn" disabled>Delete Selected Take(s)</button>
+  <button id="submitBtn" disabled>Submit Selected Take(s)</button>
+
+  <!-- Filters -->
+  <div class="filters">
+    <label><input type="checkbox" id="showSubmitted"> Show submitted takes</label>
   </div>
 
-  <div id="takesContainer" style="margin-top: 12px;"></div>
+  <div id="takesContainer" style="margin-top:8px;"></div>
   <div id="status" class="status" role="status" aria-live="polite"></div>
 
   <img id="logo" src="logo.png" alt="Life In Voices Logo" />
 
   <script>
     // ======= Configurable thresholds =======
-    const SILENCE_THRESHOLD = 0.010;   // lower sensitivity so brief pauses don't flip state
+    const SILENCE_THRESHOLD = 0.010;
     const SILENCE_WINDOW_MS = 3000;
     const MIN_GOOD_MS = 1500;
     const MIN_DURATION_MS = 1000;
@@ -73,14 +109,19 @@
     const DB_NAME = 'liv-recorder';
     const DB_STORE = 'takes';
     let db = null;
+
     function openDB(){
       return new Promise((resolve, reject)=>{
-        const req = indexedDB.open(DB_NAME, 1);
+        const req = indexedDB.open(DB_NAME, 2);
         req.onupgradeneeded = (e)=>{
           const d = e.target.result;
           if (!d.objectStoreNames.contains(DB_STORE)){
             const store = d.createObjectStore(DB_STORE, { keyPath:'id', autoIncrement:true });
             store.createIndex('createdAt','createdAt');
+          } else {
+            // v2 ensures future fields like `submitted` are accepted
+            const store = e.target.transaction.objectStore(DB_STORE);
+            if (!store.indexNames.contains('createdAt')) store.createIndex('createdAt','createdAt');
           }
         };
         req.onsuccess = ()=>{ db = req.result; resolve(db); };
@@ -105,6 +146,15 @@
         req.onerror = ()=> reject(req.error);
       });
     }
+    function idbPut(rec){
+      return new Promise((resolve,reject)=>{
+        const tx = db.transaction(DB_STORE,'readwrite');
+        const store = tx.objectStore(DB_STORE);
+        const req = store.put(rec);
+        req.onsuccess = ()=> resolve();
+        req.onerror = ()=> reject(req.error);
+      });
+    }
     function idbDelete(id){
       return new Promise((resolve,reject)=>{
         const tx = db.transaction(DB_STORE,'readwrite');
@@ -115,11 +165,13 @@
       });
     }
 
+    // ======= Recorder state =======
     let mediaRecorder, audioChunks = [], audioBlob;
     let isPaused = false;
     let stream, audioCtx, analyser, sourceNode;
     let levelTimer = null, startTime = 0, stopTime = 0, silentStreakMs = 0, totalChecks = 0, silentChecks = 0, goodAudioMs = 0;
-    // Each take: { id, blob, url, label, durMs, size, createdAt }
+
+    // Each take: { id, blob, url, label, durMs, size, createdAt, submitted }
     let takes = [];
 
     const els = {
@@ -133,8 +185,10 @@
       question: document.getElementById('questionDisplay'),
       micPill: document.getElementById('micPill'),
       levelBar: document.getElementById('levelBar'),
+      showSubmitted: document.getElementById('showSubmitted'),
     };
 
+    // ======= URL params (for filenames + question text) =======
     const urlParams = new URLSearchParams(window.location.search);
     const name = urlParams.get('name') || "unknown";
     const email = urlParams.get('email') || "noemail";
@@ -142,12 +196,13 @@
     const questionId = urlParams.get('questionId');
     const rawText = urlParams.get('questionText');
 
-    // 🎤 Generate filename base
-    let base = questionId ? `LIV_${name}_${email}_${questionId}`
-                : week ? `LIV_${name}_${email}_Week${week}`
-                : `LIV_${name}_${email}`;
+    // 🎤 Generate filename base + idempotency key for Make
+    const base = questionId ? `LIV_${name}_${email}_${questionId}`
+                 : week ? `LIV_${name}_${email}_Week${week}`
+                 : `LIV_${name}_${email}`;
+    const IDEMPOTENCY_KEY = base; // same for all takes of this question
 
-    // 🧠 Display and decode the question text
+    // Show question (and clean it from URL)
     if (rawText) {
       try {
         const cleaned = rawText.trim();
@@ -223,18 +278,36 @@
     function renderTakes(){
       els.takes.innerHTML = '';
       if (!takes.length){ return; }
+
+      const showSubmitted = els.showSubmitted.checked;
       takes.forEach((t, i) => {
+        if (!showSubmitted && t.submitted) return; // hide submitted by default
+
         const row = document.createElement('div'); row.className = 'take'; row.dataset.id = t.id;
         const header = document.createElement('header');
         const labelWrap = document.createElement('label');
-        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.name = 'selectedTake'; cb.value = String(i); if (i === takes.length - 1) cb.checked = true;
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.name = 'selectedTake'; cb.value = String(i);
+        if (!t.submitted && i === takes.length - 1) cb.checked = true; // default-check latest pending take
+
         const title = document.createElement('strong'); title.textContent = `${t.label}`;
-        const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = ` — ${(t.durMs/1000).toFixed(1)}s, ${(t.size/1024).toFixed(0)} KB`;
+        const meta = document.createElement('span'); meta.className = 'meta';
+        meta.textContent = ` — ${(t.durMs/1000).toFixed(1)}s, ${(t.size/1024).toFixed(0)} KB`;
+
         labelWrap.appendChild(cb); labelWrap.appendChild(title); labelWrap.appendChild(meta);
+        if (t.submitted){
+          const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'submitted';
+          labelWrap.appendChild(b);
+        }
+
         header.appendChild(labelWrap); row.appendChild(header);
         const audioEl = document.createElement('audio'); audioEl.controls = true; audioEl.src = t.url; row.appendChild(audioEl);
         els.takes.appendChild(row);
       });
+
+      // Buttons enabled state based on any visible, unsubmitted takes
+      const anyPendingVisible = takes.some(t => !t.submitted) && (!els.showSubmitted.checked || true);
+      els.submitBtn.disabled = !anyPendingVisible;
+      els.deleteBtn.disabled = takes.length === 0;
     }
 
     async function hydrateFromDB(){
@@ -250,14 +323,11 @@
           label: r.label || `Take ${idx+1}`,
           durMs: r.durMs || 0,
           size: r.blob ? r.blob.size : (r.size||0),
-          createdAt: r.createdAt || Date.now()
+          createdAt: r.createdAt || Date.now(),
+          submitted: !!r.submitted
         }));
         renderTakes();
-        els.deleteBtn.disabled = takes.length === 0;
-        els.submitBtn.disabled = takes.length === 0;
-      } catch (e) {
-        console.warn('IndexedDB load failed', e);
-      }
+      } catch (e) { console.warn('IndexedDB load failed', e); }
     }
 
     // Warn on accidental refresh if there are takes
@@ -265,7 +335,9 @@
       if (takes.length){ e.preventDefault(); e.returnValue = ''; }
     });
 
-    // ======= UI wire-up =======
+    // ======= Wire up controls =======
+    els.showSubmitted.addEventListener('change', renderTakes);
+
     els.startBtn.onclick = async () => {
       try {
         resetForNewTake();
@@ -289,29 +361,34 @@
           const label = `Take ${takes.length + 1}`;
 
           // Persist to IndexedDB first
-          const record = { blob: audioBlob, label, durMs, size, createdAt: Date.now() };
+          const record = { blob: audioBlob, label, durMs, size, createdAt: Date.now(), submitted:false };
           try {
             await openDB();
             const newId = await idbAddTake(record);
-            const take = { id:newId, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: record.createdAt };
+            const take = { id:newId, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: record.createdAt, submitted:false };
             takes.push(take);
             renderTakes();
-            els.deleteBtn.disabled = false; els.submitBtn.disabled = false; els.pauseBtn.disabled = true;
+            els.pauseBtn.disabled = true;
 
-            if (durMs < MIN_DURATION_MS || size < MIN_SIZE_BYTES){ els.status.innerHTML = `⚠️ ${label} may be too short or small. You can record another take or delete this one.`; }
-            else { els.status.innerHTML = `🎧 ${label} saved. You can record another take or submit.`; }
+            if (durMs < MIN_DURATION_MS || size < MIN_SIZE_BYTES){
+              els.status.innerHTML = `⚠️ ${label} may be too short or small. You can record another take or delete this one.`;
+            } else {
+              els.status.innerHTML = `🎧 ${label} saved. You can record another take or submit.`;
+            }
           } catch (e){
-            // If DB fails, still keep it in memory
             console.warn('IndexedDB save failed', e);
-            const take = { id: null, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: Date.now() };
+            const take = { id:null, blob: audioBlob, url: audioUrl, label, durMs, size, createdAt: Date.now(), submitted:false };
             takes.push(take);
             renderTakes();
-            els.deleteBtn.disabled = false; els.submitBtn.disabled = false; els.pauseBtn.disabled = true;
+            els.pauseBtn.disabled = true;
           }
         };
 
-        mediaRecorder.start(250); // flush chunks while recording
-        isPaused = false; els.startBtn.disabled = true; els.stopBtn.disabled = false; els.pauseBtn.disabled = false; els.pauseBtn.textContent = 'Pause';
+        // Important: timeslice flush prevents first-word loss on some browsers
+        mediaRecorder.start(250);
+
+        isPaused = false;
+        els.startBtn.disabled = true; els.stopBtn.disabled = false; els.pauseBtn.disabled = false; els.pauseBtn.textContent = 'Pause';
 
         const [track] = stream.getAudioTracks();
         track.onmute = () => { els.status.innerHTML = '⚠️ Your microphone was muted by the system/browser. Unmute to continue.'; };
@@ -345,11 +422,10 @@
         takes.splice(i,1);
       }
       renderTakes();
-      els.submitBtn.disabled = takes.length === 0; els.deleteBtn.disabled = takes.length === 0;
       els.status.textContent = takes.length ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes deleted. Start again when ready.';
     };
 
-    // 📤 Submit selected take(s) — sequential POSTs
+    // 📤 Submit selected take(s) — sequential POSTs with spacing and idempotency key
     els.submitBtn.onclick = async () => {
       const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
       if (!selected.length) { els.status.textContent = '⚠️ Select at least one take to submit.'; return; }
@@ -362,18 +438,43 @@
         const idx = parseInt(cb.value, 10);
         const chosen = takes[idx];
         if (!chosen || !chosen.blob || chosen.blob.size < MIN_SIZE_BYTES){ fail++; continue; }
+
         const formData = new FormData();
-        const cleanLabel = (chosen.label||'Take').replace(/\\s+/g,'');
+        const cleanLabel = (chosen.label||'Take').replace(/\s+/g,'');
         const filename = `${base}_${cleanLabel}.webm`;
         formData.append('file', chosen.blob, filename);
+        formData.append('idempotencyKey', IDEMPOTENCY_KEY);
+
         try {
           const response = await fetch('https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip', { method: 'POST', body: formData });
-          if (response.ok) ok++; else fail++;
+          if (response.ok) {
+            ok++;
+            // Mark as submitted in DB + memory (audit trail)
+            chosen.submitted = true;
+            if (chosen.id != null){
+              try {
+                await openDB();
+                await idbPut({
+                  id: chosen.id,
+                  blob: chosen.blob,
+                  label: chosen.label,
+                  durMs: chosen.durMs,
+                  size: chosen.size,
+                  createdAt: chosen.createdAt,
+                  submitted: true
+                });
+              } catch(e){ console.warn('IDB update failed', e); }
+            }
+          } else { fail++; }
         } catch (e) { fail++; }
+
+        // Small delay between takes so Make processes runs separately
+        await new Promise(r => setTimeout(r, 750));
       }
 
       els.status.innerHTML = `📤 Upload complete: <strong>${ok}</strong> succeeded, <strong>${fail}</strong> failed.`;
-      if (ok === 0) { els.submitBtn.disabled = false; }
+      els.submitBtn.disabled = false;
+      renderTakes(); // will hide newly submitted if toggle is off
     };
 
     // Hydrate saved takes on load
