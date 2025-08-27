@@ -9,26 +9,37 @@
     body { font-family: Georgia, serif; text-align:center; margin:40px auto; padding:0 20px; max-width:760px; background:var(--bg); color:var(--fg); }
     h1 { margin-bottom:6px; }
     p.lead { margin-top:0; color:var(--muted); }
+
+    /* Buttons: full-width vertical stack */
     button{ box-sizing:border-box; display:block; width:100%; max-width:420px; font-size:20px; padding:16px 24px; margin:10px auto; border-radius:10px; border:none; background:var(--btn); cursor:pointer; box-shadow:0 2px 0 rgba(0,0,0,.08);}
     button[disabled]{ opacity:.55; cursor:not-allowed }
+    @media (max-width:900px){ button{ max-width:520px; } }
+
     audio { margin:8px auto; display:block; width:100%; max-width:520px; }
     .status { font-size:16px; margin-top:14px; min-height:22px; }
     #logo { margin-top:26px; width:150px; }
+
+    /* Question block */
     #questionWrapper{ margin:20px auto; }
     #questionWrapper h3{ margin:0 0 6px; color:var(--brand); }
     #questionDisplay{ font-style:italic; font-size:18px; color:var(--fg); word-break:break-word; }
+
+    /* Mic indicator */
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; }
     .pill.ok { background:#E8F5E9; color:var(--ok); }
     .pill.warn { background:#FDECEA; color:var(--warn); }
     .bar-wrap{ margin:8px auto 0; width:240px; height:10px; background:#eee; border-radius:999px; overflow:hidden; }
     .bar{ height:100%; width:0%; background:linear-gradient(90deg,#8BC34A,#FFC107); transition:width .18s linear; }
     .tips { font-size:14px; color:var(--muted); margin-top:10px; }
+
+    /* Takes list */
     .take { text-align:left; margin:10px 0; padding:10px; border:1px solid #eee; border-radius:10px; }
     .take header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
     .take header label { display:flex; align-items:center; gap:8px; cursor:pointer; }
     .take .meta { font-size:13px; color:#666; }
     .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef; margin-left:8px; }
-    @media (max-width:900px){ button{ max-width:520px; } }
+
+    /* Filter row */
     .filters { display:flex; align-items:center; justify-content:center; gap:10px; margin:14px 0 6px; font-size:14px; color:#444; }
   </style>
 </head>
@@ -65,48 +76,272 @@
   <img id="logo" src="logo.png" alt="Life In Voices Logo" />
 
   <script>
-    // --- URL params ---
+    // ===== URL params =====
     const urlParams = new URLSearchParams(window.location.search);
     const name = urlParams.get('name') || "unknown";
     const email = urlParams.get('email') || "noemail";
     const week = urlParams.get('week');
     const questionId = urlParams.get('questionId');
-    const rawText = urlParams.get('questionText') ?? urlParams.get('question') ?? urlParams.get('q');
 
-    // Base filename + idempotency key
-    const base = questionId ? `LIV_${name}_${email}_${questionId}` : week ? `LIV_${name}_${email}_Week${week}` : `LIV_${name}_${email}`;
+    // Accept multiple keys for the question text
+    const urlQuestion =
+      urlParams.get('questionText') ??
+      urlParams.get('question') ??
+      urlParams.get('q');
+
+    // Base filename / idempotency / isolation
+    const base = questionId ? `LIV_${name}_${email}_${questionId}`
+               : week ? `LIV_${name}_${email}_Week${week}`
+               : `LIV_${name}_${email}`;
     const IDEMPOTENCY_KEY = base;
-    const GROUP_KEY = questionId ? `QID:${name}|${email}|${questionId}` : week ? `WEEK:${name}|${email}|${week}` : `GEN:${name}|${email}`;
+    const GROUP_KEY = questionId ? `QID:${name}|${email}|${questionId}`
+                     : week ? `WEEK:${name}|${email}|${week}`
+                     : `GEN:${name}|${email}`;
 
-    // Show Question
+    // ===== Persist question locally so refresh doesn't lose it =====
+    const QUESTION_LS_KEY = `liv-question-${GROUP_KEY}`;
     (function showQuestion(){
-      const el = document.getElementById('questionDisplay');
-      if (!rawText){ document.getElementById('questionWrapper').style.display="none"; return; }
-      let decoded = rawText;
-      try { decoded = decodeURIComponent(rawText.replace(/\+/g,' ')); } catch {}
-      el.textContent = `“${decoded}”`;
-      ['questionText','question','q'].forEach(k => urlParams.delete(k));
-      const q = urlParams.toString();
-      window.history.replaceState({}, document.title, window.location.pathname + (q? '?'+q : ''));
+      const wrap = document.getElementById('questionWrapper');
+      const out = document.getElementById('questionDisplay');
+
+      // 1) Prefer URL (first load)
+      let q = urlQuestion;
+      if (q != null) {
+        try { q = decodeURIComponent(String(q).replace(/\+/g,' ')); } catch {}
+        localStorage.setItem(QUESTION_LS_KEY, q);
+        // Optional: clean URL so question text isn't exposed
+        ['questionText','question','q'].forEach(k => urlParams.delete(k));
+        const qs = urlParams.toString();
+        window.history.replaceState({}, document.title, window.location.pathname + (qs ? '?' + qs : ''));
+      } else {
+        // 2) Fallback to localStorage (refresh/return)
+        q = localStorage.getItem(QUESTION_LS_KEY);
+      }
+
+      if (!q || !q.trim()) { wrap.style.display = 'none'; return; }
+      out.textContent = `“${q.trim()}”`;
     })();
 
-    // === IndexedDB (with groupKey) ===
+    // ===== IndexedDB (with groupKey) =====
     const DB_NAME='liv-recorder', DB_STORE='takes'; let db=null;
-    function openDB(){ return new Promise((res,rej)=>{ const req=indexedDB.open(DB_NAME,3); req.onupgradeneeded=e=>{const d=e.target.result; if(!d.objectStoreNames.contains(DB_STORE)){const s=d.createObjectStore(DB_STORE,{keyPath:'id',autoIncrement:true}); s.createIndex('groupKey','groupKey',{unique:false});} else {const s=e.target.transaction.objectStore(DB_STORE); if(!s.indexNames.contains('groupKey')) s.createIndex('groupKey','groupKey',{unique:false});}}; req.onsuccess=()=>{db=req.result; res(db)}; req.onerror=()=>rej(req.error)});}
+    function openDB(){ return new Promise((res,rej)=>{ const req=indexedDB.open(DB_NAME,3);
+      req.onupgradeneeded=e=>{const d=e.target.result;
+        if(!d.objectStoreNames.contains(DB_STORE)){
+          const s=d.createObjectStore(DB_STORE,{keyPath:'id',autoIncrement:true});
+          s.createIndex('createdAt','createdAt'); s.createIndex('groupKey','groupKey',{unique:false});
+        } else {
+          const s=e.target.transaction.objectStore(DB_STORE);
+          if(!s.indexNames.contains('createdAt')) s.createIndex('createdAt','createdAt');
+          if(!s.indexNames.contains('groupKey')) s.createIndex('groupKey','groupKey',{unique:false});
+        }};
+      req.onsuccess=()=>{db=req.result; res(db)}; req.onerror=()=>rej(req.error)});}
     const idbAdd=r=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.add(r);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});
     const idbAll=()=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readonly');const st=tx.objectStore(DB_STORE);const q=st.getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>rej(q.error);});
     const idbPut=r=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.put(r);q.onsuccess=()=>res();q.onerror=()=>rej(q.error);});
     const idbDel=id=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.delete(id);q.onsuccess=()=>res();q.onerror=()=>rej(q.error);});
 
-    let takes=[];
+    // ===== UI refs =====
     const els={ startBtn:document.getElementById('startBtn'),stopBtn:document.getElementById('stopBtn'),pauseBtn:document.getElementById('pauseBtn'),deleteBtn:document.getElementById('deleteBtn'),submitBtn:document.getElementById('submitBtn'),takes:document.getElementById('takesContainer'),status:document.getElementById('status'),micPill:document.getElementById('micPill'),levelBar:document.getElementById('levelBar'),showSubmitted:document.getElementById('showSubmitted') };
 
-    async function hydrate(){ try{ await openDB(); const all=await idbAll(); takes=all.map(r=>({...r,url:URL.createObjectURL(r.blob)})); render(); }catch(e){console.warn('DB load fail',e)}}
-    function render(){ els.takes.innerHTML=''; const showSub=els.showSubmitted.checked; takes.forEach((t,i)=>{ if(t.groupKey!==GROUP_KEY) return; if(!showSub&&t.submitted) return; const row=document.createElement('div');row.className='take'; const lab=document.createElement('label'); const cb=document.createElement('input'); cb.type='checkbox'; cb.value=i; lab.appendChild(cb); const title=document.createElement('strong'); title.textContent=t.label; lab.appendChild(title); const meta=document.createElement('span'); meta.className='meta'; meta.textContent=` — ${(t.durMs/1000).toFixed(1)}s, ${(t.size/1024).toFixed(0)} KB`; lab.appendChild(meta); if(t.submitted){const b=document.createElement('span'); b.className='badge'; b.textContent='submitted'; lab.appendChild(b);} row.appendChild(lab); const audio=document.createElement('audio'); audio.controls=true; audio.src=t.url; row.appendChild(audio); els.takes.appendChild(row); }); els.submitBtn.disabled=!takes.some(t=>t.groupKey===GROUP_KEY&&!t.submitted); els.deleteBtn.disabled=!takes.some(t=>t.groupKey===GROUP_KEY); }
+    // ===== Recorder state =====
+    const SILENCE_THRESHOLD = 0.010, SILENCE_WINDOW_MS = 3000, MIN_DURATION_MS = 1000, MIN_SIZE_BYTES = 5000;
+    let mediaRecorder, stream, audioCtx, analyser, sourceNode, levelTimer=null;
+    let audioChunks = [], isPaused=false, startTime=0, stopTime=0, silentStreakMs=0;
 
-    // (Recorder/mic logic omitted here for brevity — stays same as last version, still saving {groupKey: GROUP_KEY} with each take, submitting with IDEMPOTENCY_KEY, etc.)
-    // --- You would keep all the MediaRecorder, mic indicator, submit, delete logic from previous full script unchanged, only difference: each take record has groupKey: GROUP_KEY ---
+    // Takes in memory: { id, blob, url, label, durMs, size, createdAt, submitted, groupKey }
+    let takes=[];
 
+    // ===== Hydrate saved takes =====
+    async function hydrate(){ try{ await openDB(); const all=await idbAll();
+      takes = all.map(r=>({ ...r, url: URL.createObjectURL(r.blob) }));
+      render();
+    }catch(e){ console.warn('DB load fail', e); }}
+
+    function render(){
+      els.takes.innerHTML='';
+      const showSub = els.showSubmitted.checked;
+      takes.forEach((t,i)=>{
+        if(t.groupKey!==GROUP_KEY) return;
+        if(!showSub && t.submitted) return;
+        const row=document.createElement('div'); row.className='take';
+        const header=document.createElement('header');
+        const labelWrap=document.createElement('label');
+        const cb=document.createElement('input'); cb.type='checkbox'; cb.name='selectedTake'; cb.value=String(i);
+        if(!t.submitted) cb.checked=true;
+        const title=document.createElement('strong'); title.textContent=t.label;
+        const meta=document.createElement('span'); meta.className='meta'; meta.textContent=` — ${(t.durMs/1000).toFixed(1)}s, ${(t.size/1024).toFixed(0)} KB`;
+        labelWrap.appendChild(cb); labelWrap.appendChild(title); labelWrap.appendChild(meta);
+        if(t.submitted){ const b=document.createElement('span'); b.className='badge'; b.textContent='submitted'; labelWrap.appendChild(b); }
+        header.appendChild(labelWrap); row.appendChild(header);
+        const audio=document.createElement('audio'); audio.controls=true; audio.src=t.url; row.appendChild(audio);
+        els.takes.appendChild(row);
+      });
+      els.submitBtn.disabled = !takes.some(t=>t.groupKey===GROUP_KEY && !t.submitted);
+      els.deleteBtn.disabled = !takes.some(t=>t.groupKey===GROUP_KEY);
+    }
+    els.showSubmitted.addEventListener('change', render);
+
+    // ===== Mic level helpers =====
+    function setupAnalyser(msStream){
+      if (audioCtx) { try{ audioCtx.close(); }catch{} }
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      sourceNode = audioCtx.createMediaStreamSource(msStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      sourceNode.connect(analyser);
+    }
+    function getRMS(){
+      const buf = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(buf);
+      let sum=0; for(let i=0;i<buf.length;i++){ const v=(buf[i]-128)/128; sum+=v*v; }
+      return Math.sqrt(sum/buf.length);
+    }
+    function startLevelMonitor(){
+      const interval=250;
+      levelTimer = setInterval(()=>{
+        if(!analyser) return;
+        const rms = getRMS();
+        els.levelBar.style.width = Math.min(100, Math.round(rms*160)) + '%';
+        if (rms < SILENCE_THRESHOLD) {
+          els.micPill.textContent='Listening…'; els.micPill.className='pill warn';
+          silentStreakMs += interval;
+          if (startTime && silentStreakMs >= SILENCE_WINDOW_MS){
+            els.status.innerHTML='⚠️ No microphone input detected. Check mic permissions/mute and try again.';
+          }
+        } else { els.micPill.textContent='Mic input detected'; els.micPill.className='pill ok'; silentStreakMs = 0; }
+      }, interval);
+    }
+    function stopLevelMonitor(){
+      if(levelTimer){ clearInterval(levelTimer); levelTimer=null; }
+      if(audioCtx){ try{ audioCtx.close(); }catch{} audioCtx=null; }
+      analyser=null; sourceNode=null; els.levelBar.style.width='0%';
+      els.micPill.textContent='Mic not active'; els.micPill.className='pill warn';
+    }
+
+    function resetForNewTake(){
+      audioChunks=[]; isPaused=false; startTime=0; stopTime=0; silentStreakMs=0;
+      els.pauseBtn.disabled=true; els.stopBtn.disabled=true; els.startBtn.disabled=false;
+      els.status.textContent='';
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      stopLevelMonitor();
+    }
+
+    // ===== Controls =====
+    els.startBtn.onclick = async () => {
+      try{
+        resetForNewTake();
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+        });
+        try{
+          const [track] = stream.getAudioTracks();
+          await track.applyConstraints({ echoCancellation:false, noiseSuppression:false, autoGainControl:false });
+        }catch{}
+        setupAnalyser(stream); startLevelMonitor();
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder.ondataavailable = e => { if(e.data && e.data.size>0) audioChunks.push(e.data); };
+        mediaRecorder.onstart = ()=>{ startTime=Date.now(); els.status.textContent='🎙️ Recording…'; };
+        mediaRecorder.onpause = ()=>{ els.status.textContent='⏸️ Recording paused.'; };
+        mediaRecorder.onresume= ()=>{ els.status.textContent='🎙️ Recording resumed…'; };
+        mediaRecorder.onstop  = async ()=>{
+          stopTime=Date.now(); stopLevelMonitor();
+          if(!audioChunks.length){ els.status.innerHTML='❌ No audio data captured. Please check your microphone and try again.'; return; }
+          const blob=new Blob(audioChunks,{type:'audio/webm'});
+          const url=URL.createObjectURL(blob);
+          const durMs=stopTime-startTime; const size=blob.size||0;
+          const label=`Take ${takes.filter(t=>t.groupKey===GROUP_KEY).length + 1}`;
+          const record={ blob, label, durMs, size, createdAt: Date.now(), submitted:false, groupKey: GROUP_KEY };
+          try{
+            await openDB();
+            const id = await idbAdd(record);
+            takes.push({ id, ...record, url });
+          }catch(e){
+            console.warn('IDB save failed', e);
+            takes.push({ id:null, ...record, url });
+          }
+          render();
+          els.status.innerHTML = (durMs < MIN_DURATION_MS || size < MIN_SIZE_BYTES)
+            ? `⚠️ ${label} may be too short or small. You can record another take or delete this one.`
+            : `🎧 ${label} saved. You can record another take or submit.`;
+        };
+
+        // Use timeslices so first words aren't missed
+        mediaRecorder.start(250);
+        els.startBtn.disabled=true; els.stopBtn.disabled=false; els.pauseBtn.disabled=false; els.pauseBtn.textContent='Pause';
+        const [track]=stream.getAudioTracks();
+        track.onmute=()=>{ els.status.innerHTML='⚠️ Your microphone was muted by the system/browser. Unmute to continue.'; };
+        track.onunmute=()=>{ els.status.innerHTML='🎙️ Microphone active again.'; };
+        track.onended =()=>{ if(mediaRecorder && mediaRecorder.state!=='inactive'){ try{ mediaRecorder.stop(); }catch{} } };
+
+      }catch(err){
+        els.status.innerHTML = '❌ Unable to access microphone: ' + (err?.message || err);
+      }
+    };
+
+    els.pauseBtn.onclick = () => {
+      if(!mediaRecorder) return;
+      if(!isPaused){ mediaRecorder.pause(); isPaused=true; els.pauseBtn.textContent='Resume'; }
+      else { mediaRecorder.resume(); isPaused=false; els.pauseBtn.textContent='Pause'; }
+    };
+
+    els.stopBtn.onclick = () => {
+      try{ mediaRecorder && mediaRecorder.state!=='inactive' && mediaRecorder.stop(); }catch{}
+      els.startBtn.disabled=false; els.stopBtn.disabled=true; els.pauseBtn.disabled=true; els.pauseBtn.textContent='Pause';
+    };
+
+    els.deleteBtn.onclick = async () => {
+      const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
+      if(!selected.length){ els.status.textContent='Select at least one take to delete.'; return; }
+      const indexes = selected.map(c=>parseInt(c.value,10)).sort((a,b)=>b-a);
+      for(const i of indexes){
+        const t=takes[i]; if(!t || t.groupKey!==GROUP_KEY) continue;
+        if(t.id!=null){ try{ await openDB(); await idbDel(t.id); }catch{} }
+        try{ URL.revokeObjectURL(t.url); }catch{}
+        takes.splice(i,1);
+      }
+      render();
+      els.status.textContent = takes.some(t=>t.groupKey===GROUP_KEY) ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes for this question deleted.';
+    };
+
+    els.submitBtn.onclick = async () => {
+      const selected = Array.from(document.querySelectorAll('input[name="selectedTake"]:checked'));
+      if(!selected.length){ els.status.textContent='⚠️ Select at least one take to submit.'; return; }
+      els.submitBtn.disabled=true; els.status.innerHTML='📤 Uploading…';
+
+      let ok=0, fail=0;
+      for(const cb of selected){
+        const idx=parseInt(cb.value,10);
+        const t=takes[idx];
+        if(!t || t.groupKey!==GROUP_KEY || !t.blob || t.blob.size<MIN_SIZE_BYTES){ fail++; continue; }
+        const fd=new FormData();
+        const cleanLabel=(t.label||'Take').replace(/\s+/g,'');
+        const filename=`${base}_${cleanLabel}.webm`;
+        fd.append('file', t.blob, filename);
+        fd.append('idempotencyKey', IDEMPOTENCY_KEY);
+        try{
+          const resp=await fetch('https://hook.eu2.make.com/nsbtpvkksxfjkifpe2our0hxn5ykf6ip',{method:'POST',body:fd});
+          if(resp.ok){
+            ok++; t.submitted=true;
+            if(t.id!=null){
+              try{ await openDB(); await idbPut({ id:t.id, blob:t.blob, label:t.label, durMs:t.durMs, size:t.size, createdAt:t.createdAt, submitted:true, groupKey:GROUP_KEY }); }catch{}
+            }
+          } else { fail++; }
+        }catch(e){ fail++; }
+        // space uploads so Make runs separately
+        await new Promise(r=>setTimeout(r,750));
+      }
+      els.status.innerHTML=`📤 Upload complete: <strong>${ok}</strong> succeeded, <strong>${fail}</strong> failed.`;
+      els.submitBtn.disabled=false;
+      render();
+    };
+
+    // Warn on accidental refresh if there are takes for this group
+    window.addEventListener('beforeunload', (e) => {
+      if (takes.some(t=>t.groupKey===GROUP_KEY)) { e.preventDefault(); e.returnValue=''; }
+    });
+
+    // Boot
     hydrate();
   </script>
 </body>
