@@ -9,19 +9,22 @@
     body { font-family: Georgia, serif; text-align:center; margin:40px auto; padding:0 20px; max-width:760px; background:var(--bg); color:var(--fg); }
     h1 { margin-bottom:6px; }
     p.lead { margin-top:0; color:var(--muted); }
-    button{ box-sizing:border-box; display:block; width:100%; max-width:420px; font-size:20px; padding:16px 24px; margin:10px auto; border-radius:10px; border:none; background:var(--btn); cursor:pointer; box-shadow:0 2px 0 rgba(0,0,0,.08);}
+
+    /* Buttons: full-width vertical stack */
+    button{ box-sizing:border-box; display:block; width:100%; max-width:420px; font-size:20px; padding:16px 24px; margin:10px auto; border-radius:10px; border:none; background:var(--btn); cursor:pointer; box-shadow:0 2px 0 rgba(0,0,0,.08); }
     button[disabled]{ opacity:.55; cursor:not-allowed }
     @media (max-width:900px){ button{ max-width:520px; } }
+
     audio { margin:8px auto; display:block; width:100%; max-width:520px; }
     .status { font-size:16px; margin-top:14px; min-height:22px; }
     #logo { margin-top:26px; width:150px; }
 
-    /* Question */
+    /* Question block */
     #questionWrapper{ margin:20px auto; }
     #questionWrapper h3{ margin:0 0 6px; color:var(--brand); }
     #questionDisplay{ font-style:italic; font-size:18px; color:var(--fg); word-break:break-word; }
 
-    /* Mic */
+    /* Mic indicator */
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:14px; }
     .pill.ok { background:#E8F5E9; color:var(--ok); }
     .pill.warn { background:#FDECEA; color:var(--warn); }
@@ -29,13 +32,14 @@
     .bar{ height:100%; width:0%; background:linear-gradient(90deg,#8BC34A,#FFC107); transition:width .18s linear; }
     .tips { font-size:14px; color:var(--muted); margin-top:10px; }
 
-    /* Takes */
+    /* Takes list */
     .take { text-align:left; margin:10px 0; padding:10px; border:1px solid #eee; border-radius:10px; }
     .take header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
     .take header label { display:flex; align-items:center; gap:8px; cursor:pointer; }
     .take .meta { font-size:13px; color:#666; }
     .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef; margin-left:8px; }
 
+    /* Filter row */
     .filters { display:flex; align-items:center; justify-content:center; gap:10px; margin:14px 0 6px; font-size:14px; color:#444; }
   </style>
 </head>
@@ -73,25 +77,45 @@
 
   <script>
   (function(){
-    // ===== URL / identity =====
+    // ---------- Helpers ----------
+    const safeDecode = (v) => {
+      try { return decodeURIComponent(String(v).replace(/\+/g,' ')); } catch { return String(v); }
+    };
+    const normalize = (s) => (s ?? '').toLowerCase().replace(/\s+/g,' ').trim();
+
+    // ---------- URL / identity ----------
     const urlParams = new URLSearchParams(window.location.search);
-    const name = urlParams.get('name') || "unknown";
-    const email = urlParams.get('email') || "noemail";
-    const week = urlParams.get('week');
+    const nameRaw  = urlParams.get('name')  || "unknown";
+    const emailRaw = urlParams.get('email') || "noemail";
+    const week     = urlParams.get('week');
     const questionId = urlParams.get('questionId');
+
+    // Use normalized name/email for bucket identity (tolerant to case/spacing changes)
+    const name  = safeDecode(nameRaw);
+    const email = safeDecode(emailRaw);
+    const NNAME  = normalize(name);
+    const NEMAIL = normalize(email);
 
     const urlQuestion = urlParams.get('questionText') ?? urlParams.get('question') ?? urlParams.get('q');
 
+    // Raw group key (for legacy entries) + normalized group key (new writes & matching)
+    const GROUP_KEY_RAW = questionId ? `QID:${name}|${email}|${questionId}`
+                        : week ? `WEEK:${name}|${email}|${week}`
+                        : `GEN:${name}|${email}`;
+    const GROUP_KEY_NORM = questionId ? `qid:${NNAME}|${NEMAIL}|${String(questionId)}`
+                         : week ? `week:${NNAME}|${NEMAIL}|${String(week)}`
+                         : `gen:${NNAME}|${NEMAIL}`;
+
+    // Filename base / idempotency key
     const base = questionId ? `LIV_${name}_${email}_${questionId}`
                : week ? `LIV_${name}_${email}_Week${week}`
                : `LIV_${name}_${email}`;
     const IDEMPOTENCY_KEY = base;
-    const GROUP_KEY = questionId ? `QID:${name}|${email}|${questionId}`
-                     : week ? `WEEK:${name}|${email}|${week}`
-                     : `GEN:${name}|${email}`;
-    const QUESTION_LS_KEY = `liv-question-${GROUP_KEY}`;
 
-    // ===== Elements =====
+    // Question persistence (per normalized group)
+    const QUESTION_LS_KEY = `liv-question-${GROUP_KEY_NORM}`;
+
+    // ---------- Elements ----------
     const els = {
       startBtn:document.getElementById('startBtn'),
       stopBtn:document.getElementById('stopBtn'),
@@ -107,22 +131,34 @@
       showSubmitted:document.getElementById('showSubmitted')
     };
 
-    // ===== Recorder state =====
+    // Remember “show submitted” per group — default ON
+    const SHOW_SUB_KEY = `liv-show-submitted-${GROUP_KEY_NORM}`;
+    const savedPref = localStorage.getItem(SHOW_SUB_KEY);
+    els.showSubmitted.checked = savedPref ? savedPref === '1' : true;
+    els.showSubmitted.addEventListener('change', () => {
+      localStorage.setItem(SHOW_SUB_KEY, els.showSubmitted.checked ? '1' : '0');
+      render();
+    });
+
+    // ---------- Recorder state ----------
     const SILENCE_THRESHOLD = 0.010, SILENCE_WINDOW_MS = 3000, MIN_DURATION_MS = 1000, MIN_SIZE_BYTES = 5000;
     let mediaRecorder, stream, audioCtx, analyser, sourceNode, levelTimer=null;
     let audioChunks = [], isPaused=false, startTime=0, stopTime=0, silentStreakMs=0;
 
-    // ===== IndexedDB =====
+    // ---------- IndexedDB ----------
     const DB_NAME='liv-recorder', DB_STORE='takes'; let db=null;
     function openDB(){ return new Promise((res,rej)=>{ const req=indexedDB.open(DB_NAME,3);
       req.onupgradeneeded=e=>{const d=e.target.result;
         if(!d.objectStoreNames.contains(DB_STORE)){
           const s=d.createObjectStore(DB_STORE,{keyPath:'id',autoIncrement:true});
-          s.createIndex('createdAt','createdAt'); s.createIndex('groupKey','groupKey',{unique:false});
+          s.createIndex('createdAt','createdAt');
+          s.createIndex('groupKey','groupKey',{unique:false});
+          s.createIndex('groupKeyNorm','groupKeyNorm',{unique:false});
         } else {
           const s=e.target.transaction.objectStore(DB_STORE);
-          if(!s.indexNames.contains('createdAt')) s.createIndex('createdAt','createdAt');
-          if(!s.indexNames.contains('groupKey')) s.createIndex('groupKey','groupKey',{unique:false});
+          if(!s.indexNames.contains('createdAt'))   s.createIndex('createdAt','createdAt');
+          if(!s.indexNames.contains('groupKey'))    s.createIndex('groupKey','groupKey',{unique:false});
+          if(!s.indexNames.contains('groupKeyNorm'))s.createIndex('groupKeyNorm','groupKeyNorm',{unique:false});
         }};
       req.onsuccess=()=>{db=req.result; res(db)}; req.onerror=()=>rej(req.error)});}
     const idbAdd=r=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.add(r);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});
@@ -130,10 +166,21 @@
     const idbPut=r=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.put(r);q.onsuccess=()=>res();q.onerror=()=>rej(q.error);});
     const idbDel=id=>new Promise((res,rej)=>{const tx=db.transaction(DB_STORE,'readwrite');const st=tx.objectStore(DB_STORE);const q=st.delete(id);q.onsuccess=()=>res();q.onerror=()=>rej(q.error);});
 
-    // ===== Takes =====
+    // ---------- Takes ----------
+    // Each: { id, blob, url, label, durMs, size, createdAt, submitted, groupKey, groupKeyNorm }
     let takes=[];
+
+    function sameGroup(t){
+      // Show if exact normalized match OR legacy raw matches current raw when normalized
+      if (t.groupKeyNorm && t.groupKeyNorm === GROUP_KEY_NORM) return true;
+      const tNorm = normalize(t.groupKey || '');
+      return tNorm && tNorm === normalize(GROUP_KEY_RAW);
+    }
+
     async function hydrate(){
-      try{ await openDB(); const all=await idbAll();
+      try{
+        await openDB();
+        const all=await idbAll();
         takes = all.map(r=>({ ...r, url: URL.createObjectURL(r.blob) }));
         render();
       }catch(e){ console.warn('DB load fail', e); }
@@ -142,15 +189,22 @@
     function render(){
       els.takes.innerHTML='';
       const showSub = els.showSubmitted.checked;
+
+      let visible = 0, hasSubmitted = false, hasAnyForGroup=false;
+
       takes.forEach((t,i)=>{
-        if(t.groupKey!==GROUP_KEY) return;
+        if(!sameGroup(t)) return;
+        hasAnyForGroup = true;
+        if (t.submitted) hasSubmitted = true;
         if(!showSub && t.submitted) return;
+
+        visible++;
         const row=document.createElement('div'); row.className='take';
         const header=document.createElement('header');
         const labelWrap=document.createElement('label');
         const cb=document.createElement('input'); cb.type='checkbox'; cb.name='selectedTake'; cb.value=String(i);
         if(!t.submitted) cb.checked=true;
-        const title=document.createElement('strong'); title.textContent=t.label;
+        const title=document.createElement('strong'); title.textContent=t.label || 'Take';
         const meta=document.createElement('span'); meta.className='meta'; meta.textContent=` — ${(t.durMs/1000).toFixed(1)}s, ${(t.size/1024).toFixed(0)} KB`;
         labelWrap.appendChild(cb); labelWrap.appendChild(title); labelWrap.appendChild(meta);
         if(t.submitted){ const b=document.createElement('span'); b.className='badge'; b.textContent='submitted'; labelWrap.appendChild(b); }
@@ -158,18 +212,24 @@
         const audio=document.createElement('audio'); audio.controls=true; audio.src=t.url; row.appendChild(audio);
         els.takes.appendChild(row);
       });
-      els.submitBtn.disabled = !takes.some(t=>t.groupKey===GROUP_KEY && !t.submitted);
-      els.deleteBtn.disabled = !takes.some(t=>t.groupKey===GROUP_KEY);
+
+      els.submitBtn.disabled = !takes.some(t=>sameGroup(t) && !t.submitted);
+      els.deleteBtn.disabled = !hasAnyForGroup;
+
+      if (visible === 0 && hasSubmitted && !showSub) {
+        els.status.innerHTML = '👀 You have submitted takes for this question. Tick “Show submitted takes” to view them.';
+      } else if (visible === 0) {
+        els.status.textContent = '';
+      }
     }
 
-    // ===== Question: robust, never-throw, persists across refresh =====
+    // ---------- Question (robust + persistent) ----------
     (function showQuestionSafe(){
       try{
         let q = urlQuestion;
         if (q != null) {
-          try { q = decodeURIComponent(String(q).replace(/\+/g,' ')); } catch {}
+          q = safeDecode(q);
           localStorage.setItem(QUESTION_LS_KEY, q);
-          // Clean URL (remove only question param)
           ['questionText','question','q'].forEach(k => urlParams.delete(k));
           const qs = urlParams.toString();
           try { window.history.replaceState({}, document.title, window.location.pathname + (qs ? '?' + qs : '')); } catch {}
@@ -184,13 +244,12 @@
           els.questionWrap.style.display = 'none';
         }
       } catch(e){
-        // Never block the rest of the app
         console.warn('Question render failed:', e);
         els.questionWrap.style.display = 'none';
       }
     })();
 
-    // ===== Mic helpers =====
+    // ---------- Mic helpers ----------
     function setupAnalyser(msStream){
       if (audioCtx) { try{ audioCtx.close(); }catch{} }
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -234,9 +293,7 @@
       stopLevelMonitor();
     }
 
-    // ===== Wire up controls (handlers first, then we hydrate) =====
-    els.showSubmitted.addEventListener('change', render);
-
+    // ---------- Wire controls ----------
     els.startBtn.onclick = async () => {
       try{
         resetForNewTake();
@@ -250,13 +307,12 @@
 
         setupAnalyser(stream); startLevelMonitor();
 
-        // Choose a supported mime
         let options = {};
         if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) {
           options.mimeType = 'audio/webm';
         } else if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/mp4')) {
           options.mimeType = 'audio/mp4';
-        } // else no mime (browser default)
+        }
 
         mediaRecorder = new MediaRecorder(stream, options);
         mediaRecorder.ondataavailable = e => { if(e.data && e.data.size>0) audioChunks.push(e.data); };
@@ -269,8 +325,8 @@
           const blob=new Blob(audioChunks,{type: options.mimeType || 'audio/webm'});
           const url=URL.createObjectURL(blob);
           const durMs=stopTime-startTime; const size=blob.size||0;
-          const label=`Take ${takes.filter(t=>t.groupKey===GROUP_KEY).length + 1}`;
-          const record={ blob, label, durMs, size, createdAt: Date.now(), submitted:false, groupKey: GROUP_KEY };
+          const label=`Take ${takes.filter(t=>sameGroup(t)).length + 1}`;
+          const record={ blob, label, durMs, size, createdAt: Date.now(), submitted:false, groupKey: GROUP_KEY_RAW, groupKeyNorm: GROUP_KEY_NORM };
           try{ await openDB(); const id = await idbAdd(record); takes.push({ id, ...record, url }); }
           catch(e){ console.warn('IDB save failed', e); takes.push({ id:null, ...record, url }); }
           render();
@@ -309,13 +365,13 @@
       if(!selected.length){ els.status.textContent='Select at least one take to delete.'; return; }
       const indexes = selected.map(c=>parseInt(c.value,10)).sort((a,b)=>b-a);
       for(const i of indexes){
-        const t=takes[i]; if(!t || t.groupKey!==GROUP_KEY) continue;
+        const t=takes[i]; if(!t || !sameGroup(t)) continue;
         if(t.id!=null){ try{ await openDB(); await idbDel(t.id); }catch{} }
         try{ URL.revokeObjectURL(t.url); }catch{}
         takes.splice(i,1);
       }
       render();
-      els.status.textContent = takes.some(t=>t.groupKey===GROUP_KEY) ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes for this question deleted.';
+      els.status.textContent = takes.some(t=>sameGroup(t)) ? '🗑️ Selected take(s) deleted.' : '🗑️ All takes for this question deleted.';
     };
 
     els.submitBtn.onclick = async () => {
@@ -327,7 +383,7 @@
       for(const cb of selected){
         const idx=parseInt(cb.value,10);
         const t=takes[idx];
-        if(!t || t.groupKey!==GROUP_KEY || !t.blob || t.blob.size<MIN_SIZE_BYTES){ fail++; continue; }
+        if(!t || !sameGroup(t) || !t.blob || t.blob.size<MIN_SIZE_BYTES){ fail++; continue; }
         const fd=new FormData();
         const cleanLabel=(t.label||'Take').replace(/\s+/g,'');
         const filename=`${base}_${cleanLabel}.webm`;
@@ -338,7 +394,7 @@
           if(resp.ok){
             ok++; t.submitted=true;
             if(t.id!=null){
-              try{ await openDB(); await idbPut({ id:t.id, blob:t.blob, label:t.label, durMs:t.durMs, size:t.size, createdAt:t.createdAt, submitted:true, groupKey:GROUP_KEY }); }catch{}
+              try{ await openDB(); await idbPut({ id:t.id, blob:t.blob, label:t.label, durMs:t.durMs, size:t.size, createdAt:t.createdAt, submitted:true, groupKey:t.groupKey, groupKeyNorm: t.groupKeyNorm || GROUP_KEY_NORM }); }catch{}
             }
           } else { fail++; }
         }catch(e){ fail++; }
@@ -351,10 +407,10 @@
 
     // Warn on unload if there are takes for this group
     window.addEventListener('beforeunload', (e) => {
-      if (takes.some(t=>t.groupKey===GROUP_KEY)) { e.preventDefault(); e.returnValue=''; }
+      if (takes.some(t=>sameGroup(t))) { e.preventDefault(); e.returnValue=''; }
     });
 
-    // Boot AFTER handlers are attached
+    // ---------- Boot ----------
     hydrate();
   })();
   </script>
