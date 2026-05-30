@@ -119,7 +119,7 @@
     const cleanSessionId = cleanFilePart(sessionId);
 
     const base =
-        isStorySession ? `LIV_StorySession_${cleanSessionId || 'NoSessionId'}_${cleanName}`
+    isStorySession ? `LIV_StorySession_${cleanName}_${cleanEmail}_${cleanSessionId || 'NoSessionId'}`
       : questionId ? `LIV_${cleanName}_${cleanEmail}_${cleanFilePart(questionId)}`
       : week ? `LIV_${cleanName}_${cleanEmail}_Week${cleanFilePart(week)}`
       : `LIV_${cleanName}_${cleanEmail}`;
